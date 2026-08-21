@@ -1,0 +1,13 @@
+# 占位:Tauri build 需要图标文件,但我们还没生成
+#
+# 临时方法(开发模式可注释掉 tauri.conf.json 的 icons 字段):
+#   bundle.active = false
+#
+# 正式打包前需要图标:
+#   - icons/32x32.png
+#   - icons/128x128.png
+#   - icons/128x128@2x.png
+#   - icons/icon.icns (macOS)
+#   - icons/icon.ico (Windows)
+#
+# 可以用 `cargo tauri icon path/to/source.png` 自动生成

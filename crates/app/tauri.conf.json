@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Rust API Holder",
+  "version": "0.1.0",
+  "identifier": "com.jhoncagewang.api-holder",
+  "build": {
+    "beforeDevCommand": "pnpm --dir ../../ui dev",
+    "beforeBuildCommand": "pnpm --dir ../../ui build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Rust API Holder",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Lightweight API debugging tool",
+    "longDescription": "A lightweight Postman/Apifox alternative built with Rust + Tauri",
+    "copyright": "© 2024 JhonCageWang",
+    "licenseFile": "../../LICENSE"
+  }
+}

@@ -1,0 +1,41 @@
+[package]
+name = "api-holder-core"
+description = "Core business logic for rust-api-holder (HTTP, storage, models)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "api_holder_core"
+path = "src/lib.rs"
+
+[dependencies]
+# 序列化
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# 异步
+tokio = { workspace = true }
+reqwest = { workspace = true }
+
+# 错误处理
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# 日志
+tracing = { workspace = true }
+
+# 工具
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# 数据库
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+# 测试用 tokio runtime
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"  # 测试用临时目录

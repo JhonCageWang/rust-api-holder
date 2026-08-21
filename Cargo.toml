@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["JhonCageWang"]
+license = "MIT"
+repository = "https://github.com/JhonCageWang/rust-api-holder"
+rust-version = "1.75"
+
+# ============================================================
+# 共享依赖(所有 crate 用同一版本,避免重复编译)
+# ============================================================
+[workspace.dependencies]
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# HTTP 客户端(reqwest 用 rustls,避免 OpenSSL 系统依赖)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 工具
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# 数据库(bundled = 自带 SQLite,无需系统安装)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Tauri 2(只在 app 用,但在 workspace 集中管理版本)
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+# 二进制体积优化
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+# 开发模式:优化编译速度而非运行速度
+opt-level = 0
+debug = 1
+incremental = true
