@@ -508,37 +508,99 @@ UI骨架   编辑器  树组件   集成    联调    历史UI  导入UI  细节
 
 ---
 
-## 八、📚 学习路线(贯穿全程)
+## 八、📚 学习路线:**边做边学法**(实践派)
 
-### Rust 核心知识点地图
+### 🧠 核心理念
+**不要先啃完全部教程再写代码**。Rust 的概念(如 lifetime、trait、async)必须在真实场景里用过一次才真正懂。
 
-按周对应要重点掌握的概念:
+### 🔄 我们的循环
 
 ```
-Week 1 → 所有权/借用/生命周期基础、crate / module、Cargo workspace
-Week 2 → 异步(async/await)、Result 与 ?、derive 宏、trait 基础
-Week 3 → 错误处理(thiserror)、泛型、Sender/Receiver、生命周期进阶
-Week 4 → serde 序列化、Option 处理、闭包
-Week 5 → trait 对象、Box<dyn>、智能指针
-Week 6 → 迭代器链、模式匹配、字符串处理
-Week 7 → 性能分析、profiling、build profile
+写代码 → 报错 → 看错误信息 + 我帮你解释 → 修补 → 理解
+   ↑                                                  ↓
+   └──────────────── 继续写 ──────────────────────────┘
 ```
 
-### 推荐配套学习资源
-- 📖 **The Rust Book**(官方):https://doc.rust-lang.org/book/(必读)
-- 📖 **Rust by Example**:https://doc.rust-lang.org/rust-by-example/(示例驱动)
-- 🎥 **Rust 语言圣经**:https://course.rs/(中文友好)
-- 🛠️ **Tauri 2 官方教程**:https://v2.tauri.app/start/
-- 🛠️ **Tauri 实战**:GitHub 上搜 `tauri-vue-template` 参考
+每次报错都是一次精准学习 — 比看 10 章书更有用。
 
-### 踩坑预警(提前打预防针)
-| 坑 | 现象 | 对策 |
+---
+
+### 🆘 卡壳时的应急流程
+
+**遇到任何 Rust 错误**(borrow checker / lifetime / async / 类型推断):
+1. **完整复制错误信息**(包含 `error[E0XXX]:` 那几行)
+2. **贴给我**,我会:
+   - 解释这个错误为什么发生
+   - 给出最小修复方案
+   - 顺便讲解背后的概念
+3. **你改完**,继续写
+
+我会主动帮你"在错误中学",不会让你一个人啃文档。
+
+---
+
+### 🗺️ Rust 概念触发速查表(按需查阅)
+
+**写哪个模块时遇到,就翻下面哪个章节**:
+
+| 实际触发场景 | 必看概念 | 推荐阅读 |
 |---|---|---|
-| 编译慢 | Tauri 首次编译 10+ 分钟 | 用 `cargo watch`,不全量重编 |
-| Borrow checker 报错 | 函数签名调来调去 | 别急着绕,先理解生命周期 |
-| Tauri 2 权限配置 | `deny(unsafe_access)` | `capabilities/default.json` 里加权限 |
-| 异步锁死 | `.await` 时持锁 | 用 `tokio::sync::Mutex` |
-| JSON 解析失败 | Postman 字段缺失 | serde 默认值 + 优雅降级 |
+| 写函数签名 / 传引用 | 所有权、借用 | Rust Book Ch 4 |
+| 函数返回引用 | 生命周期(lifetime) | Rust Book Ch 10.3 |
+| 用 `?` 处理 Result | 错误处理基础 | Rust Book Ch 9 |
+| 自己定义错误类型 | `thiserror` crate | thiserror docs |
+| 写 `async fn` | async/await、Future | Rust Book Ch 17 |
+| 想让不同类型共享接口 | trait | Rust Book Ch 10 |
+| 多个类型组成一个新类型 | 泛型 + trait bound | Rust Book Ch 10 |
+| 解析 JSON / 配置 | serde 派生宏 | serde docs |
+| 想存数据在内存里 | `Vec` / `HashMap` | Rust Book Ch 8 |
+| 嵌套类型里套类型 | `Box<T>` / `Rc<T>` | Rust Book Ch 15 |
+| 多线程跑任务 | `tokio::spawn` / channel | tokio tutorial |
+
+> 💡 **不要按顺序读**!遇到问题再来查对应章节,效率高 10 倍。
+
+---
+
+### 📚 配套资源(选择性使用)
+
+| 资源 | 适合场景 | 链接 |
+|---|---|---|
+| **The Rust Book** | 概念速查、出错时查 | https://doc.rust-lang.org/book/ |
+| **Rust by Example** | 看示例理解语法 | https://doc.rust-lang.org/rust-by-example/ |
+| **Rust 语言圣经(course.rs)** | 中文友好的概念教程 | https://course.rs/ |
+| **std 文档** | 查标准库 API | https://doc.rust-lang.org/std/ |
+| **Tauri 2 官方** | Tauri 相关 | https://v2.tauri.app/start/ |
+| **rustlings**(未完成部分) | 每日 15 分钟小练习 | https://github.com/rust-lang/rustlings |
+
+---
+
+### 🪤 常见卡点预警(提前打预防针)
+
+| 坑 | 表现 | 我的应对建议 |
+|---|---|---|
+| 编译慢 | Tauri 首次编译 10+ 分钟 | 用 `cargo watch`,只重编改动部分 |
+| **borrow checker** 报错 | 函数签名改来改去 | 别急着绕,**贴错误给我**,我帮你理解 |
+| 所有权转移混乱 | `value moved here` | 通常是设计问题,不是绕的问题 |
+| **lifetime** 不懂 | `expected lifetime parameter` | 先返回 owned 类型,后期再优化 |
+| Tauri 2 权限 | `deny(unsafe_access)` | `capabilities/default.json` 加权限 |
+| 异步里用阻塞 API | 程序卡死 | 阻塞用 `tokio::task::spawn_blocking` |
+| async + 普通锁死锁 | `.await` 时持锁 | 用 `tokio::sync::Mutex` |
+| serde 字段缺失 | 反序列化失败 | 加 `#[serde(default)]` |
+| Result 类型忘了 `?` | 函数冗长 | 优先用 `?`,只在顶层用 `match` |
+
+---
+
+### 💡 我(AI)的学习辅助承诺
+
+| 我会主动做的 | 我不会做的 |
+|---|---|
+| ✅ 看到你贴的编译错误,**用通俗话解释** | ❌ 让你一个人啃英文文档 |
+| ✅ 给最小可运行示例,而不是抽象概念 | ❌ 假设你已懂某个概念 |
+| ✅ 解释"为什么这样写"而不只是"怎么写" | ❌ 给你完整代码让你复制粘贴 |
+| ✅ 在你写之前,提醒"这块可能卡" | ❌ 让你卡超过 30 分钟才说话 |
+| ✅ 主动补充"易错点"和"惯用法" | ❌ 让你学 Rust 习语学半天不推进 |
+
+> 🎯 **目标**:让你每次写 Rust 都比上次更顺,而不是"先学完再开始"。
 
 ---
 
@@ -601,11 +663,12 @@ pnpm tauri dev
 
 ### 🔄 协作流程(每周一次)
 
-**每周五晚上 / 周六上午**(任选固定时间):
+**每周日上午**(固定时间):
 1. **你** commit 本周 Rust 代码,简单告诉我这周完成了什么
 2. **你** 列出"下周需要前端配合什么"(通常是新的 Command 签名)
 3. **我** 提交本周前端代码 + 下周 Command 接口类型定义
 4. **我** 把前端代码放到对应位置,你 review 或合并(可选)
+5. **我** 总结本周你卡过的地方 + 帮你规划下周复习哪一块
 
 ### 🚧 边界与约定
 - ❌ **我不修改 `crates/` 下的任何 Rust 文件**(避免破坏你的所有权设计)
@@ -640,16 +703,14 @@ pnpm tauri dev
 
 ---
 
-## 十二、❓ 还有 2 个问题确认下
+## 十二、✅ 已确认事项
 
-1. **周回顾时间**:每周五晚 / 周六上午,定一个固定时间做同步(我们交接代码 + 对齐下周),你方便吗?
-
-2. **Git 协作方式**:
-   - 选项 A:同一 repo,你直接 commit Rust,我把前端文件以"代码块 / 完整文件"形式贴给你,你粘贴进 `ui/`
-   - 选项 B:你建好 repo 给我协作权限,我直接 push 前端(但这需要我能访问你的 GitHub)
-   - 你倾向哪种?
+- **周回顾时间**:每周日上午 ✅
+- **Git 协作方式**:方案 B(浏览器自动化 + 直接 push) ✅
+- **学习风格**:边做边学,卡壳回头补(不单独加 Week 0 预热周) ✅
+- **仓库**:`https://github.com/JhonCageWang/rust-api-holder` ✅
 
 ---
 
 > 📌 本文档会随着开发推进持续更新。
-> 一旦你确认这版合理 + 上面 2 个问题的答案,我们就开始 **Week 1 的第一个 commit** 🚀
+> 下周一(Week 1 Day 1)开始第一个 commit 🚀
