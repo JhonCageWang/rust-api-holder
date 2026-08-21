@@ -1,0 +1,64 @@
+# =====================================================
+# Rust + Tauri + Vue 3 项目 .gitignore
+# =====================================================
+
+# --- Rust 编译产物 ---
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+*.pdb
+
+# 保留根目录的 Cargo.lock(便于应用二进制),但忽略工作空间里的重复
+# 如果是 library crate,可以 uncomment 下一行
+# Cargo.lock
+
+# --- Rust 工具链 / IDE ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# --- Node / 前端 ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# 前端日志
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Vite ---
+.vite/
+*.local
+
+# --- Tauri ---
+src-tauri/target/
+
+# --- 环境变量 / 凭据 ---
+.env
+.env.local
+.env.*.local
+
+# --- 系统 ---
+.DS_Store
+Thumbs.db
+
+# --- 编辑器临时文件 ---
+*.swp
+*.swo
+*~
+.fuse_hidden*
+
+# --- 测试覆盖率 ---
+coverage/
+*.lcov
+
+# --- 编译数据库 ---
+compile_commands.json
+.clangd/
