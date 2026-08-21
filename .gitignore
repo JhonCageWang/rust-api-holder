@@ -61,4 +61,7 @@ coverage/
 
 # --- 编译数据库 ---
 compile_commands.json
-.clangd/
+.clangd/crates/app/gen/
+crates/app/target/
+
+# Tauri build artifacts

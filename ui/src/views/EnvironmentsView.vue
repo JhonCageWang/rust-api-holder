@@ -10,7 +10,9 @@
       <n-ul>
         <n-li>创建 / 编辑 / 删除环境(dev / staging / prod)</n-li>
         <n-li>环境变量 CRUD</n-li>
-        <n-li>激活切换(影响所有请求的 <n-text code>{{ '{{var}}' }}</n-text> 插值)</n-li>
+        <n-li>
+          激活切换(影响所有请求的 <n-text code v-pre>{{var}}</n-text> 插值)
+        </n-li>
       </n-ul>
     </div>
   </div>

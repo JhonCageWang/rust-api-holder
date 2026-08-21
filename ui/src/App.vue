@@ -21,16 +21,21 @@ const setTab = (name: string) => router.push({ name })
               @update:value="setTab"
               class="app-tabs"
             >
-              <n-tab-pane name="home" tab="📡 请求" display-directive="show">
-                <router-view />
+              <!-- ⚠️ Naive UI 必须用 #tab slot,不能用 tab="..." prop -->
+              <n-tab-pane name="home">
+                <template #tab>📡 请求</template>
               </n-tab-pane>
-              <n-tab-pane name="environments" tab="🌍 环境" display-directive="show">
-                <router-view />
+              <n-tab-pane name="environments">
+                <template #tab>🌍 环境</template>
               </n-tab-pane>
-              <n-tab-pane name="history" tab="📜 历史" display-directive="show">
-                <router-view />
+              <n-tab-pane name="history">
+                <template #tab>📜 历史</template>
               </n-tab-pane>
             </n-tabs>
+            <!-- router-view 在 tabs 外面,只渲染当前路由对应的 view -->
+            <div class="app-content">
+              <router-view />
+            </div>
           </div>
         </n-notification-provider>
       </n-dialog-provider>
@@ -46,12 +51,10 @@ const setTab = (name: string) => router.push({ name })
 }
 
 .app-tabs {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  flex-shrink: 0;
 }
 
-.app-tabs :deep(.n-tabs-pane-wrapper) {
+.app-content {
   flex: 1;
   overflow: hidden;
 }
