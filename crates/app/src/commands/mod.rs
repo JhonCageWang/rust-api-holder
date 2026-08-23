@@ -11,7 +11,10 @@
 //! 2. **业务逻辑放 core**,Commands 只是薄壳
 //! 3. **错误用 anyhow::Result**(链到前端是 string)
 //!
-//! TODO(Week 4-6): 完整的 Commands 实现(collection / request / environment / history)
+//! TODO(Week 4-6): 完整的 Commands 实现(collection / environment / history)
+
+// 按职责拆分，每个文件一类命令
+pub mod request;
 
 use serde::Serialize;
 

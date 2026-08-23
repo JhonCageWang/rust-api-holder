@@ -67,6 +67,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::ping,
             commands::app_info,
+            commands::request::execute_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

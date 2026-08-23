@@ -16,7 +16,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 
-import type { AppInfo } from '@/types/api'
+import type { ApiRequest, ApiResponse, AppInfo } from '@/types/api'
 
 /** 是否在 Tauri 环境(运行时检测) */
 const isTauri =
@@ -34,6 +34,11 @@ if (!isTauri) {
 export interface CommandSignatures {
   ping: { args: undefined; returns: string }
   app_info: { args: undefined; returns: AppInfo }
+  /** 发送一个 HTTP 请求,返回响应。vars 是环境变量插值表。 */
+  execute_request: {
+    args: { req: ApiRequest; vars?: Record<string, string> }
+    returns: ApiResponse
+  }
   // TODO(Week 4+): 在这里添加更多 command 签名
   // create_collection: { args: { name: string }, returns: Collection }
   // ...
@@ -91,6 +96,40 @@ async function mockInvoke<C extends CommandName>(
         version: '0.1.0-dev',
         db_status: 'mock',
       } as CommandSignatures[C]['returns']
+
+    case 'execute_request': {
+      // 浏览器开发模式下,不要真的发请求(会跨域、还会被服务器拦)
+      // 把请求原样回显成 JSON,这样能看到编辑器的组装是否正确
+      const a = args as { req: ApiRequest; vars?: Record<string, string> }
+      const echoBody = JSON.stringify(
+        {
+          mock: true,
+          tip: '这是浏览器 mock 响应。在 Tauri 环境里会真的发出去。',
+          sent: {
+            method: a.req.method,
+            url: a.req.url,
+            headers: a.req.headers,
+            query: a.req.query,
+            body: a.req.body,
+            auth: a.req.auth,
+          },
+          vars: a.vars ?? {},
+        },
+        null,
+        2,
+      )
+      return {
+        status: 200,
+        status_text: 'OK (mock)',
+        headers: [
+          { key: 'content-type', value: 'application/json', enabled: true },
+          { key: 'x-mock-server', value: 'api-holder-mock/0.1', enabled: true },
+        ],
+        body: echoBody,
+        duration_ms: 123,
+        size_bytes: echoBody.length,
+      } as CommandSignatures[C]['returns']
+    }
 
     // TODO(Week 4+): 加更多 mock
     // case 'list_collections':

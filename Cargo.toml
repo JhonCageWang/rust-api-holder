@@ -57,5 +57,5 @@ panic = "abort"
 [profile.dev]
 # 开发模式:优化编译速度而非运行速度
 opt-level = 0
-debug = 1
+debug = true
 incremental = true

@@ -39,3 +39,9 @@ rusqlite = { workspace = true }
 # 测试用 tokio runtime
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = "3"  # 测试用临时目录
+
+# 测试用 mock HTTP 服务器(在测试进程内起一个,不打真实网络)
+httpmock = "0.7"
+
+# Basic auth 测试要算 base64(user:pass),加这个用来对值
+base64 = "0.22"

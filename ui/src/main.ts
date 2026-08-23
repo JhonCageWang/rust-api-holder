@@ -20,14 +20,31 @@ import './styles/global.css'
 
 // 按需 import 用到的 Naive UI 组件
 import {
-  // 基础
+  // 基础 / Provider
   NConfigProvider,
   NMessageProvider,
   NDialogProvider,
   NNotificationProvider,
+  // 反馈
+  NSpin,
+  NAlert,
+  NEmpty,
+  // 基础控件
+  NButton,
+  NCheckbox,
+  // 表单
+  NInput,
+  NSelect,
+  NRadio,
+  NRadioButton,
+  NRadioGroup,
+  // 数据展示
+  NCode,
+  NTable,
   // 布局
   NTabs,
   NTabPane,
+  NSpace,
   // 文本
   NH2,
   NP,
@@ -46,8 +63,21 @@ const naiveComponents = {
   NMessageProvider,
   NDialogProvider,
   NNotificationProvider,
+  NSpin,
+  NAlert,
+  NEmpty,
+  NButton,
+  NCheckbox,
+  NInput,
+  NSelect,
+  NRadio,
+  NRadioButton,
+  NRadioGroup,
+  NCode,
+  NTable,
   NTabs,
   NTabPane,
+  NSpace,
   NH2,
   NP,
   NUl,
