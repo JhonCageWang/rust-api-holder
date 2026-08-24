@@ -157,19 +157,31 @@ function create(): void {
 }
 
 .new-tab {
-  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 36px;
+  padding: 0 8px;
   flex-shrink: 0;
   background: transparent;
-  border: 1px dashed var(--n-border-color);
+  border: 1px solid var(--n-border-color);
   border-radius: 4px;
-  color: var(--n-text-color-3);
+  color: var(--n-text-color-2);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 1;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .new-tab:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--n-text-color-1);
+  background: var(--n-color, #fff);
+  color: #18a058;
+  border-color: #18a058;
+}
+
+.new-tab:active {
+  background: rgba(24, 160, 88, 0.08);
 }
 </style>

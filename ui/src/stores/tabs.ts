@@ -114,26 +114,23 @@ export const useTabsStore = defineStore('tabs', () => {
 
   /**
    * 关闭 Tab
-   * - 最后一个 Tab 不能关(改成新建)
-   * - 关掉当前 active Tab 后,激活相邻的
+   * - 最后一个 Tab 不被真正移除 — 而是**清空它**(像 Postman 一样)
+   *   保证至少有一个 Tab 存在,避免 UI 上看到空状态
+   * - 关掉中间 Tab 后,激活相邻的
    */
   function closeTab(id: string): void {
     const idx = tabs.value.findIndex((t) => t.id === id)
     if (idx === -1) return
 
-    // 最后一个 Tab 不允许关 — 改成新建一个空白 Tab
+    // 最后一个 Tab → 清空它(不创建新 Tab,不删除)
     if (tabs.value.length === 1) {
-      createTab()
-      // 把当前 Tab 重置为空(保留 id 但内容清空)
-      tabs.value[0] = {
-        ...tabs.value[0],
-        request: emptyRequest(),
-        response: null,
-        error: null,
-        title: autoTitle(emptyRequest()),
-        customTitle: false,
-        isDirty: false,
-      }
+      const tab = tabs.value[0]
+      tab.request = emptyRequest()
+      tab.response = null
+      tab.error = null
+      tab.title = autoTitle(tab.request)
+      tab.customTitle = false
+      tab.isDirty = false
       return
     }
 
