@@ -50,14 +50,47 @@ pub struct AppState {
     pub http_client: reqwest::Client,
 }
 
-/// 解析 app 数据目录,创建子目录,返回 db 路径
-fn resolve_db_path(handle: &tauri::AppHandle) -> std::io::Result<PathBuf> {
-    let dir = handle
-        .path()
-        .app_data_dir()
-        .expect("failed to resolve app data dir");
+/// 解析数据库路径
+///
+/// 优先级(从高到低):
+/// 1. 环境变量 `API_HOLDER_DB_PATH`(开发 / 调试用)
+/// 2. 默认 `~/api-holder/api-holder.db`(用户目录,好找)
+///
+/// 为什么要默认放 `~/api-holder` 而不是 `~/Library/Application Support/`?
+/// - 后者是 macOS 系统约定位置,用户不熟悉、不透明
+/// - 用户访问文件不方便(隐藏、需要 Cmd+Shift+. 显示)
+/// - `~/api-holder` 一目了然,Finder / iTerm 都能直接进
+///
+/// 如果不想污染 home 目录,设置环境变量:
+/// ```bash
+/// export API_HOLDER_DB_PATH=/Users/you/somewhere/db.sqlite
+/// cargo tauri dev
+/// ```
+fn resolve_db_path() -> std::io::Result<PathBuf> {
+    // 1. 环境变量覆盖
+    if let Ok(custom) = std::env::var("API_HOLDER_DB_PATH") {
+        let path = PathBuf::from(custom);
+        tracing::info!("db path from $API_HOLDER_DB_PATH: {}", path.display());
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        return Ok(path);
+    }
+
+    // 2. 默认:~/api-holder/api-holder.db
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE")) // Windows fallback
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "neither HOME nor USERPROFILE env var is set",
+            )
+        })?;
+    let dir = PathBuf::from(home).join("api-holder");
     std::fs::create_dir_all(&dir)?;
-    Ok(dir.join("api-holder.db"))
+    let path = dir.join("api-holder.db");
+    tracing::info!("db path: {}", path.display());
+    Ok(path)
 }
 
 fn main() {
@@ -72,10 +105,8 @@ fn main() {
     tracing::info!("🦀 Rust API Holder starting up...");
 
     tauri::Builder::default()
-        .setup(|app| {
-            let db_path = resolve_db_path(app.handle())
-                .expect("failed to resolve db path");
-            tracing::info!("db path: {}", db_path.display());
+        .setup(|_app| {
+            let db_path = resolve_db_path().expect("failed to resolve db path");
 
             // 打开 SQLite(会自动跑 migrations)
             let db = Database::open(&db_path).expect("failed to open database");
@@ -84,7 +115,7 @@ fn main() {
             // 共享的 reqwest::Client(30 秒超时)
             let http_client = default_client().expect("failed to build http client");
 
-            app.manage(AppState { db, http_client });
+            _app.manage(AppState { db, http_client });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
