@@ -21,13 +21,11 @@ pub struct Migration {
 }
 
 /// 内置迁移列表(按 version 升序)
-pub static MIGRATIONS: &[Migration] = &[
-    Migration {
-        version: 1,
-        description: "initial schema",
-        sql: INITIAL_SCHEMA,
-    },
-];
+pub static MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    description: "initial schema",
+    sql: INITIAL_SCHEMA,
+}];
 
 const INITIAL_SCHEMA: &str = r#"
 -- 迁移记录表

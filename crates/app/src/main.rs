@@ -2,10 +2,10 @@
 //!
 //! 职责:
 //! 1. 启动 Tauri Builder,加载前端 webview
-//! 2. 初始化 core 中的数据库 + 日志
+//! 2. 初始化 core 中的数据库 + 共享的 reqwest::Client
 //! 3. 注册 Tauri Commands(把 core 的能力暴露给前端)
 //!
-//! TODO(Week 4): 完整的 Commands 注册
+//! TODO(Week 3): 完整 Database 初始化
 
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
@@ -18,18 +18,27 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
+use api_holder_core::http::default_client;
 use api_holder_core::storage::Database;
 
 /// 全局应用状态(由前端通过 Tauri Commands 访问)
+///
+/// 持有:
+/// - `db`: SQLite 数据库连接(Week 3 才实装,目前只占位)
+/// - `http_client`: 共享的 reqwest::Client(所有 HTTP 请求复用,享受连接池)
 pub struct AppState {
     /// SQLite 数据库连接(Week 3 才实装,目前只占位)
     pub db: Mutex<Option<Database>>,
+    /// 共享的 HTTP 客户端(连接池复用)
+    pub http_client: reqwest::Client,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             db: Mutex::new(None),
+            // 30 秒超时,跟 core 里的 default_client() 保持一致
+            http_client: default_client().expect("failed to build default http client"),
         }
     }
 }
@@ -57,9 +66,9 @@ fn main() {
             // TODO(Week 3): 在这里初始化 Database
             // let db_path = data_dir.join("api-holder.db");
             // let db = Database::open(&db_path)?;
-            // app.manage(AppState { db: Mutex::new(Some(db)) });
+            // app.manage(AppState { db: Mutex::new(Some(db)), http_client });
 
-            // 临时 manage 一个空的 AppState,前端 Week 4 才能跑起来
+            // 临时 manage 一个带共享 Client 的 AppState,前端 Week 4 才能跑起来
             app.manage(AppState::default());
 
             Ok(())

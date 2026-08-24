@@ -1,0 +1,13 @@
+# Rust 项目代码格式化配置
+
+# import 排序:std → 第三方 → 本 crate
+group_imports = "StdExternalCrate"
+
+# use 按 crate 分组(用空行分隔)
+imports_granularity = "Crate"
+
+# 最大行宽
+max_width = 100
+
+# 链式调用:每个方法单独一行
+chain_width = 60

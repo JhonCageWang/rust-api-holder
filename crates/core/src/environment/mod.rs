@@ -79,10 +79,7 @@ mod tests {
     #[test]
     fn test_interpolate_missing_keeps_original() {
         let vars = HashMap::new();
-        assert_eq!(
-            interpolate("hello {{name}}", &vars),
-            "hello {{name}}"
-        );
+        assert_eq!(interpolate("hello {{name}}", &vars), "hello {{name}}");
     }
 
     #[test]

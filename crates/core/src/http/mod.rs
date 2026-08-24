@@ -55,6 +55,19 @@ fn default_enabled() -> bool {
     true
 }
 
+impl KeyValue {
+    /// 用 `vars` 替换 value 中的 `{{var}}`,返回新实例。
+    ///
+    /// key 不替换(它是字段名,不是数据)。
+    pub fn interpolated(&self, vars: &HashMap<String, String>) -> Self {
+        Self {
+            key: self.key.clone(),
+            value: interpolate(&self.value, vars),
+            enabled: self.enabled,
+        }
+    }
+}
+
 /// HTTP 请求体类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -66,7 +79,38 @@ pub enum Body {
     /// 表单 body(application/x-www-form-urlencoded)
     Form { fields: Vec<KeyValue> },
     /// 原始文本(text/plain 等)
-    Raw { content: String, content_type: String },
+    Raw {
+        content: String,
+        content_type: String,
+    },
+}
+
+impl Body {
+    /// 用 `vars` 替换所有 String字段中的 `{{var}}`,返回新实例。
+    pub fn interpolated(&self, vars: &HashMap<String, String>) -> Self {
+        match self {
+            Body::None => Body::None,
+            Body::Json { content } => Body::Json {
+                content: interpolate(content, vars),
+            },
+            Body::Form { fields } => Body::Form {
+                fields: fields.iter().map(|kv| kv.interpolated(vars)).collect(),
+            },
+            Body::Raw {
+                content,
+                content_type,
+            } => Body::Raw {
+                content: interpolate(content, vars),
+                content_type: interpolate(content_type, vars),
+            },
+        }
+    }
+}
+
+impl Default for Body {
+    fn default() -> Self {
+        Body::None
+    }
 }
 
 /// 认证配置
@@ -74,9 +118,49 @@ pub enum Body {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Auth {
     None,
-    Bearer { token: String },
-    Basic { username: String, password: String },
-    ApiKey { key: String, value: String, in_header: bool },
+    Bearer {
+        token: String,
+    },
+    Basic {
+        username: String,
+        password: String,
+    },
+    ApiKey {
+        key: String,
+        value: String,
+        in_header: bool,
+    },
+}
+
+impl Auth {
+    /// 用 `vars` 替换所有 String字段中的 `{{var}}`,返回新实例。
+    pub fn interpolated(&self, vars: &HashMap<String, String>) -> Self {
+        match self {
+            Auth::None => Auth::None,
+            Auth::Bearer { token } => Auth::Bearer {
+                token: interpolate(token, vars),
+            },
+            Auth::Basic { username, password } => Auth::Basic {
+                username: interpolate(username, vars),
+                password: interpolate(password, vars),
+            },
+            Auth::ApiKey {
+                key,
+                value,
+                in_header,
+            } => Auth::ApiKey {
+                key: interpolate(key, vars),
+                value: interpolate(value, vars),
+                in_header: *in_header,
+            },
+        }
+    }
+}
+
+impl Default for Auth {
+    fn default() -> Self {
+        Auth::None
+    }
 }
 
 /// 完整的 HTTP 请求定义
@@ -109,57 +193,15 @@ pub struct Response {
 ///
 /// 为什么抽出来:`execute()` 只关心「怎么发请求」,
 /// 「变量解析」是独立的关注点,这样也方便写单元测试。
-fn apply_vars(req: Request, vars: &HashMap<String, String>) -> Request {
-    let mut req = req;
-
-    // URL 是最常见的占位符位置
+///
+/// 每个子结构(Body / Auth / KeyValue)自己负责插值,
+/// 这里只负责"按字段把 interpolate 串起来"。
+fn apply_vars(mut req: Request, vars: &HashMap<String, String>) -> Request {
     req.url = interpolate(&req.url, vars);
-
-    // Headers / Query:只替换 value,不替换 key(key 是写死的字段名)
-    req.headers = req.headers.into_iter().map(|mut kv| {
-        kv.value = interpolate(&kv.value, vars);
-        kv
-    }).collect();
-    req.query = req.query.into_iter().map(|mut kv| {
-        kv.value = interpolate(&kv.value, vars);
-        kv
-    }).collect();
-
-    // Auth 四种变体都要逐一处理
-    req.auth = match req.auth {
-        Auth::None => Auth::None,
-        Auth::Bearer { token } => Auth::Bearer {
-            token: interpolate(&token, vars),
-        },
-        Auth::Basic { username, password } => Auth::Basic {
-            username: interpolate(&username, vars),
-            password: interpolate(&password, vars),
-        },
-        Auth::ApiKey { key, value, in_header } => Auth::ApiKey {
-            key: interpolate(&key, vars),
-            value: interpolate(&value, vars),
-            in_header,
-        },
-    };
-
-    // Body 三种带内容的变体都要处理
-    req.body = match req.body {
-        Body::None => Body::None,
-        Body::Json { content } => Body::Json {
-            content: interpolate(&content, vars),
-        },
-        Body::Form { fields } => Body::Form {
-            fields: fields.into_iter().map(|mut kv| {
-                kv.value = interpolate(&kv.value, vars);
-                kv
-            }).collect(),
-        },
-        Body::Raw { content, content_type } => Body::Raw {
-            content: interpolate(&content, vars),
-            content_type: interpolate(&content_type, vars),
-        },
-    };
-
+    req.headers = req.headers.iter().map(|kv| kv.interpolated(vars)).collect();
+    req.query = req.query.iter().map(|kv| kv.interpolated(vars)).collect();
+    req.auth = req.auth.interpolated(vars);
+    req.body = req.body.interpolated(vars);
     req
 }
 
@@ -178,15 +220,19 @@ fn apply_vars(req: Request, vars: &HashMap<String, String>) -> Request {
 /// 9. `send()` 真正发请求
 /// 10. 把 reqwest 的 `HeaderMap` 拷成 `Vec<KeyValue>`
 /// 11. `text()` 读 body,算耗时,装进 [`Response`] 返回
-pub async fn execute(req: Request) -> crate::Result<Response> {
+pub async fn execute(client: &reqwest::Client, req: Request) -> crate::Result<Response> {
     // 不带变量的便捷入口
-    execute_with_vars(req, &HashMap::new()).await
+    execute_with_vars(client, req, &HashMap::new()).await
 }
 
 /// 同 [`execute`],但会先用 `vars` 把 `{{var}}` 替换掉。
 ///
 /// 调用场景:UI 上选了某个 Environment,把它激活的变量表传进来。
+///
+/// `client` 参数由调用方传入(通常是 AppState 里共享的 Client),
+/// 这样可以复用连接池,避免每次请求都新建 Client。
 pub async fn execute_with_vars(
+    client: &reqwest::Client,
     req: Request,
     vars: &HashMap<String, String>,
 ) -> crate::Result<Response> {
@@ -197,42 +243,44 @@ pub async fn execute_with_vars(
     // ─── 2. 计时开始 ──────────────────────────────────────────────
     let started = Instant::now();
 
-    // ─── 3. 构造 HTTP 客户端(30 秒超时)───────────────────────────
-    // builder().build() 返回 Result,`?` 借助 Error 里的
-    // `#[from] reqwest::Error` 自动转成我们的 Error。
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
-
     // ─── 4. 搭起 RequestBuilder(method + url)─────────────────────
     // 这一步就开始解析 URL 了,非法 URL(没 scheme 之类)会在 `?` 处报错。
-    let mut builder = client.request(
-        req.method.to_reqwest(),
-        req.url.as_str(),
-    );
+    let mut builder = client.request(req.method.to_reqwest(), &req.url);
 
     // ─── 5. Query Params ─────────────────────────────────────────
     // 只挑启用的、key 非空的 — 避免 `?=foo` 这种空键污染 URL。
-    //   reqwest 收到 (k, v) 数组会自动拼成 `?k=v&k=v...`
-    for kv in req.query.iter()
+    // 先 collect 成 Vec,再一次性传给 reqwest,避免循环里反复分配。
+    let query_pairs: Vec<(&str, &str)> = req
+        .query
+        .iter()
         .filter(|kv| kv.enabled && !kv.key.is_empty())
-    {
-        builder = builder.query(&[(kv.key.as_str(), kv.value.as_str())]);
+        .map(|kv| (kv.key.as_str(), kv.value.as_str()))
+        .collect();
+    if !query_pairs.is_empty() {
+        builder = builder.query(&query_pairs);
     }
 
     // ─── 6. Headers ──────────────────────────────────────────────
     // 非法 header 名(含换行/控制字符)或非 UTF-8 value,静默跳过 —
     // 不让单个坏 header 把整个请求搞挂。
-    for kv in req.headers.iter()
+    for kv in req
+        .headers
+        .iter()
         .filter(|kv| kv.enabled && !kv.key.is_empty())
     {
         let name = match kv.key.parse::<reqwest::header::HeaderName>() {
             Ok(n) => n,
-            Err(_) => continue, // 跳过非法 header 名
+            Err(_) => {
+                tracing::warn!(key = %kv.key, "header 名非法,跳过");
+                continue;
+            }
         };
         let value = match kv.value.parse::<reqwest::header::HeaderValue>() {
             Ok(v) => v,
-            Err(_) => continue, // 跳过非法 header 值
+            Err(_) => {
+                tracing::warn!(key = %kv.key, value = %kv.value, "header 值非法,跳过");
+                continue;
+            }
         };
         builder = builder.header(name, value);
     }
@@ -244,15 +292,20 @@ pub async fn execute_with_vars(
         // Authorization: Bearer <token>
         Auth::Bearer { token } => builder.bearer_auth(token),
         // Authorization: Basic base64(user:pass)
-        Auth::Basic { username, password } => {
-            builder.basic_auth(username, Some(password))
-        }
+        Auth::Basic { username, password } => builder.basic_auth(username, Some(password)),
         // ApiKey 可以放 header 里,也可以放 query 里(看 in_header)
-        Auth::ApiKey { key, value, in_header } => {
+        Auth::ApiKey {
+            key,
+            value,
+            in_header,
+        } => {
             if in_header {
                 match key.parse::<reqwest::header::HeaderName>() {
                     Ok(name) => builder.header(name, value),
-                    Err(_) => builder, // 跳过非法 header 名
+                    Err(_) => {
+                        tracing::warn!(key = %key, "ApiKey header 名非法,跳过");
+                        builder
+                    }
                 }
             } else {
                 // 拼到 query 上,会和上面 query 字段的内容合并。
@@ -272,16 +325,18 @@ pub async fn execute_with_vars(
         // Form:application/x-www-form-urlencoded
         Body::Form { fields } => {
             // 同样只挑启用且 key 非空的
-            let form: Vec<(&str, &str)> = fields.iter()
+            let form: Vec<(&str, &str)> = fields
+                .iter()
                 .filter(|kv| kv.enabled && !kv.key.is_empty())
                 .map(|kv| (kv.key.as_str(), kv.value.as_str()))
                 .collect();
             builder.form(&form)
         }
         // Raw:自定义 content-type 的纯文本
-        Body::Raw { content, content_type } => builder
-            .header("Content-Type", content_type)
-            .body(content),
+        Body::Raw {
+            content,
+            content_type,
+        } => builder.header("Content-Type", content_type).body(content),
     };
 
     // ─── 9. 真正发出去 ──────────────────────────────────────────
@@ -291,7 +346,8 @@ pub async fn execute_with_vars(
     // ─── 10. 拷出 headers ────────────────────────────────────────
     // ⚠️ 顺序敏感:`response.text()` 会消费 body,但 `iter()` 只是借用,
     // 所以**先**把 headers 拷出来,再读 body。
-    let headers: Vec<KeyValue> = response.headers()
+    let headers: Vec<KeyValue> = response
+        .headers()
         .iter()
         .map(|(name, value)| KeyValue {
             key: name.as_str().to_string(),
@@ -320,16 +376,17 @@ pub async fn execute_with_vars(
     })
 }
 
-impl Default for Body {
-    fn default() -> Self {
-        Body::None
-    }
-}
-
-impl Default for Auth {
-    fn default() -> Self {
-        Auth::None
-    }
+/// 构造一个默认的 reqwest::Client(30 秒超时)
+///
+/// **生产环境**:不要每次请求都新建!Client 内部有连接池,
+/// 应该放到 AppState 里共享。这里提供这个 helper 是为了:
+/// - 测试时可以快速建一个
+/// - 文档演示用
+pub fn default_client() -> crate::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -382,6 +439,36 @@ mod tests {
                 assert_eq!(content, r#"{"base": "https://api.example.com"}"#);
             }
             _ => panic!("body type 变了"),
+        }
+    }
+
+    #[test]
+    fn test_auth_interpolated_bearer() {
+        let auth = Auth::Bearer {
+            token: "{{tok}}".into(),
+        };
+        let mut vars = HashMap::new();
+        vars.insert("tok".into(), "secret".into());
+        match auth.interpolated(&vars) {
+            Auth::Bearer { token } => assert_eq!(token, "secret"),
+            _ => panic!("类型变了"),
+        }
+    }
+
+    #[test]
+    fn test_body_interpolated_form() {
+        let body = Body::Form {
+            fields: vec![KeyValue {
+                key: "user_id".into(),
+                value: "{{uid}}".into(),
+                enabled: true,
+            }],
+        };
+        let mut vars = HashMap::new();
+        vars.insert("uid".into(), "42".into());
+        match body.interpolated(&vars) {
+            Body::Form { fields } => assert_eq!(fields[0].value, "42"),
+            _ => panic!("类型变了"),
         }
     }
 }

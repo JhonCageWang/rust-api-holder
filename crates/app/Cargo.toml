@@ -29,6 +29,9 @@ serde_json = { workspace = true }
 # 异步
 tokio = { workspace = true }
 
+# HTTP 客户端(AppState 里持有共享的 reqwest::Client)
+reqwest = { workspace = true }
+
 # 错误处理
 anyhow = { workspace = true }
 thiserror = { workspace = true }
