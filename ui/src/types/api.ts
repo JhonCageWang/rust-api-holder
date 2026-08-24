@@ -60,6 +60,13 @@ export interface Collection {
   updated_at: string
 }
 
+/** 创建集合时的输入参数(对应 Rust 的 `NewCollection`) */
+export interface NewCollection {
+  name: string
+  description: string | null
+  parent_id: string | null
+}
+
 export interface RequestItem {
   id: string
   collection_id: string
@@ -73,6 +80,18 @@ export interface RequestItem {
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+/** 创建请求时的输入参数(对应 Rust 的 `NewRequest`) */
+export interface NewRequest {
+  collection_id: string
+  name: string
+  method: HttpMethod
+  url: string
+  headers: KeyValue[]
+  query: KeyValue[]
+  body: RequestBody
+  auth: Auth
 }
 
 // ===== 环境变量 =====

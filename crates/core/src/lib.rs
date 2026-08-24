@@ -14,6 +14,7 @@
 //! - [`history`]     — 请求历史
 //! - [`import`]      — 导入(Postman JSON 等)
 //! - [`storage`]     — SQLite 持久化(Repository 模式)
+//! - [`types`]       — 共享 DTO 类型
 //! - [`error`]       — 统一错误类型
 
 #![warn(missing_docs)]
@@ -26,6 +27,7 @@ pub mod history;
 pub mod http;
 pub mod import;
 pub mod storage;
+pub mod types;
 
 pub use error::{Error, Result};
 

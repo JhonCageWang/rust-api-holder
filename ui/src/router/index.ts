@@ -1,12 +1,11 @@
 /**
  * Vue Router 配置
  *
- * 三个一级路由:
+ * 四个一级路由:
  * - /  → HomeView(请求编辑器,主界面)
+ * - /collections → CollectionsView(集合管理)
  * - /environments → EnvironmentsView
  * - /history → HistoryView
- *
- * 后续会加入嵌套路由(比如 HomeView 下有 collection 子路由)。
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -17,6 +16,11 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
+  },
+  {
+    path: '/collections',
+    name: 'collections',
+    component: () => import('@/views/CollectionsView.vue'),
   },
   {
     path: '/environments',

@@ -6,7 +6,7 @@
  * ┌──────────────────────────────────────────────┐
  * │ [GET /users ×] [POST /login ×] [+]          │   Tab 切换条
  * ├──────────────────────────────────────────────┤
- * │ Method | URL | Send                          │   工具栏
+ * │ Method | URL | Send | 💾Save                │   工具栏
  * ├──────────────────────────────────────────────┤
  * │ [Params] [Headers] [Body] [Auth]              │
  * │  子编辑器                                    │   请求区
@@ -20,15 +20,19 @@
  */
 
 import { computed, onMounted, ref } from 'vue'
+import { useMessage } from 'naive-ui'
 
 import { useTabsStore } from '@/stores/tabs'
-import type { HttpMethod } from '@/types/api'
+import { invokeT } from '@/composables/useInvoke'
+import type { Collection, HttpMethod } from '@/types/api'
 
 import RequestTabs from '@/components/RequestTabs.vue'
 import KeyValueEditor from '@/components/request/KeyValueEditor.vue'
 import BodyEditor from '@/components/request/BodyEditor.vue'
 import AuthEditor from '@/components/request/AuthEditor.vue'
 import ResponseViewer from '@/components/request/ResponseViewer.vue'
+
+const message = useMessage()
 
 // ─── Store ──────────────────────────────────────────────
 
@@ -79,6 +83,62 @@ const response = computed(() => activeTab.value?.response ?? null)
 type SubTab = 'params' | 'headers' | 'body' | 'auth'
 const activeSubTab = ref<SubTab>('params')
 
+// ─── Save to collection ──────────────────────────────────
+const collections = ref<Collection[]>([])
+const showSaveModal = ref(false)
+const saveTargetCollId = ref<string | null>(null)
+const saveRequestName = ref('')
+
+async function loadCollections() {
+  try {
+    collections.value = await invokeT('list_collections', undefined)
+  } catch (e) {
+    message.error(`加载集合失败: ${(e as Error).message}`)
+  }
+}
+
+function openSaveDialog() {
+  if (!activeTab.value) return
+  loadCollections()
+  // 从 URL 提取默认名字(最后一段路径)
+  try {
+    const u = new URL(url.value)
+    const last = u.pathname.split('/').filter(Boolean).pop() || u.host
+    saveRequestName.value = last
+  } catch {
+    saveRequestName.value = url.value.slice(0, 30)
+  }
+  saveTargetCollId.value = collections.value[0]?.id ?? null
+  showSaveModal.value = true
+}
+
+async function confirmSave() {
+  if (!activeTab.value) return
+  if (!saveTargetCollId.value) {
+    message.warning('请选择一个集合')
+    return
+  }
+  const name = saveRequestName.value.trim() || 'Untitled'
+  try {
+    await invokeT('create_request', {
+      new: {
+        collection_id: saveTargetCollId.value,
+        name,
+        method: method.value,
+        url: url.value,
+        headers: headers.value,
+        query: query.value,
+        body: body.value,
+        auth: auth.value,
+      },
+    })
+    message.success(`已保存到集合`)
+    showSaveModal.value = false
+  } catch (e) {
+    message.error(`保存失败: ${(e as Error).message}`)
+  }
+}
+
 // ─── Constants ──────────────────────────────────────────
 
 const METHOD_OPTIONS: { label: HttpMethod; value: HttpMethod }[] = [
@@ -121,6 +181,7 @@ async function sendRequest(): Promise<void> {
             style="flex: 1"
             @keydown.enter="sendRequest"
           />
+          <n-button @click="openSaveDialog">💾 保存</n-button>
           <n-button
             type="primary"
             :loading="loading"
@@ -178,6 +239,35 @@ async function sendRequest(): Promise<void> {
       size="large"
       style="margin-top: 64px"
     />
+
+    <!-- 保存请求到 collection 弹窗 -->
+    <n-modal
+      v-model:show="showSaveModal"
+      preset="card"
+      title="💾 保存请求到集合"
+      style="max-width: 480px"
+    >
+      <n-space vertical>
+        <n-text>选择目标集合:</n-text>
+        <n-select
+          v-model:value="saveTargetCollId"
+          :options="collections.map(c => ({ label: c.name, value: c.id }))"
+          placeholder="选择一个集合"
+        />
+        <n-text>请求名称:</n-text>
+        <n-input
+          v-model:value="saveRequestName"
+          placeholder="请求名称"
+          @keydown.enter="confirmSave"
+        />
+      </n-space>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showSaveModal = false">取消</n-button>
+          <n-button type="primary" @click="confirmSave">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 

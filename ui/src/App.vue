@@ -25,6 +25,9 @@ const setTab = (name: string) => router.push({ name })
               <n-tab-pane name="home">
                 <template #tab>📡 请求</template>
               </n-tab-pane>
+              <n-tab-pane name="collections">
+                <template #tab>📁 集合</template>
+              </n-tab-pane>
               <n-tab-pane name="environments">
                 <template #tab>🌍 环境</template>
               </n-tab-pane>

@@ -1,49 +1,43 @@
-//! Tauri Commands(给前端调用的函数)
+//! Tauri Commands 注册
 //!
-//! 每个 `#[tauri::command]` 函数都自动生成前端 invoke 接口:
-//! ```ts
-//! import { invoke } from '@tauri-apps/api/core'
-//! const result = await invoke('ping', { /* args */ })
-//! ```
+//! 业务模块,每个文件负责一类 Tauri Command:
 //!
-//! 设计原则:
-//! 1. **参数和返回值都用 serde 序列化**(前端拿到的是 JSON)
-//! 2. **业务逻辑放 core**,Commands 只是薄壳
-//! 3. **错误用 anyhow::Result**(链到前端是 string)
+//! - [`request`]      — HTTP 请求执行
+//! - [`collections`]  — 集合
+//! - [`requests`]     — 请求
+//! - [`environments`] — 环境
+//! - [`variables`]    — 环境变量
+//! - [`history`]      — 历史记录
 //!
-//! TODO(Week 4-6): 完整的 Commands 实现(collection / environment / history)
+//! 所有命令在 `main.rs` 的 `tauri::generate_handler!` 里集中注册。
 
-// 按职责拆分，每个文件一类命令
+pub mod collections;
+pub mod environments;
+pub mod history;
 pub mod request;
+pub mod requests;
+pub mod variables;
 
-use serde::Serialize;
+use api_holder_core::types::AppInfo;
 
 use crate::AppState;
 
-/// 健康检查(给前端确认后端已就绪)
+/// 心跳命令(测试 IPC 通不通)
 #[tauri::command]
-pub fn ping() -> &'static str {
-    "pong"
+pub fn ping() -> String {
+    "pong".into()
 }
 
-/// 返回应用元信息(版本、数据库路径等)
+/// 应用信息(版本、db 状态等)
 #[tauri::command]
 pub fn app_info(state: tauri::State<'_, AppState>) -> AppInfo {
     AppInfo {
-        name: env!("CARGO_PKG_NAME").to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        // TODO(Week 3): db_status 根据 state.db 实际状态返回
-        db_status: if state.db.lock().unwrap().is_some() {
-            "ready".to_string()
+        name: env!("CARGO_PKG_NAME").into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        db_status: if state.db.path().to_str() == Some("<in-memory>") {
+            "in-memory".into()
         } else {
-            "not initialized".to_string()
+            "file".into()
         },
     }
-}
-
-#[derive(Debug, Serialize)]
-pub struct AppInfo {
-    pub name: String,
-    pub version: String,
-    pub db_status: String,
 }

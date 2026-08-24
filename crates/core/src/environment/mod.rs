@@ -10,6 +10,7 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -49,7 +50,7 @@ pub struct Variable {
 ///     "https://api.example.com/users"
 /// );
 /// ```
-pub fn interpolate(input: &str, vars: &std::collections::HashMap<String, String>) -> String {
+pub fn interpolate(input: &str, vars: &HashMap<String, String>) -> String {
     // Week 2 实装,先用最朴素实现
     let mut result = input.to_string();
     for (key, value) in vars {
