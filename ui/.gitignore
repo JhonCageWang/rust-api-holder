@@ -5,6 +5,9 @@ dist-ssr/
 *.local
 .DS_Store
 *.log
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
 
 # Editor
 .vscode/
