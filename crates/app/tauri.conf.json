@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.jhoncagewang.api-holder",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../../ui dev",
+    "beforeDevCommand": "",
     "beforeBuildCommand": "pnpm --dir ../../ui build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../../ui/dist"

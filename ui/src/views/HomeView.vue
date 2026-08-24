@@ -1,51 +1,86 @@
 <script setup lang="ts">
 /**
- * 主界面:请求编辑器 + 响应查看器
+ * 主界面:多 Tab 请求编辑器 + 响应查看器
  *
  * 布局(从上到下):
  * ┌──────────────────────────────────────────────┐
- * │ Method | URL | Send                            │   工具栏
+ * │ [GET /users ×] [POST /login ×] [+]          │   Tab 切换条
+ * ├──────────────────────────────────────────────┤
+ * │ Method | URL | Send                          │   工具栏
  * ├──────────────────────────────────────────────┤
  * │ [Params] [Headers] [Body] [Auth]              │
- * │ ┌─────────────────────────────────────────┐  │
- * │ │  对应编辑器的子内容                       │  │   请求区
- * │ └─────────────────────────────────────────┘  │
+ * │  子编辑器                                    │   请求区
  * ├──────────────────────────────────────────────┤
- * │ Response: [200 OK] ⏱234ms 📦1.2KB            │
- * │ [Body] [Headers]                              │
- * │ ┌─────────────────────────────────────────┐  │
- * │ │  响应内容(高亮 JSON)                     │  │   响应区
- * │ └─────────────────────────────────────────┘  │
+ * │ Response: [200] ⏱234ms 📦1.2KB 📋 Copy    │
+ * │ [Body] [Raw] [Headers]                      │
+ * │  响应内容(高亮 JSON)                       │   响应区
  * └──────────────────────────────────────────────┘
+ *
+ * 数据来自 tabs store,每个 Tab 有自己的完整状态
  */
-import { ref } from 'vue'
-import { useMessage } from 'naive-ui'
 
-import { invokeT } from '@/composables/useInvoke'
-import type { ApiRequest, ApiResponse, HttpMethod } from '@/types/api'
+import { computed, onMounted, ref } from 'vue'
 
+import { useTabsStore } from '@/stores/tabs'
+import type { HttpMethod } from '@/types/api'
+
+import RequestTabs from '@/components/RequestTabs.vue'
 import KeyValueEditor from '@/components/request/KeyValueEditor.vue'
 import BodyEditor from '@/components/request/BodyEditor.vue'
 import AuthEditor from '@/components/request/AuthEditor.vue'
 import ResponseViewer from '@/components/request/ResponseViewer.vue'
 
-// ─── 状态 ───────────────────────────────────────────────
+// ─── Store ──────────────────────────────────────────────
 
-// 当前编辑中的请求(完全受控状态,改字段直接写这里)
-const request = ref<ApiRequest>({
-  method: 'GET',
-  url: 'https://httpbin.org/get',
-  headers: [],
-  query: [],
-  body: { type: 'none' },
-  auth: { type: 'none' },
+const tabsStore = useTabsStore()
+
+// ─── Lifecycle ──────────────────────────────────────────
+
+onMounted(() => {
+  // 确保至少有 1 个 Tab
+  tabsStore.ensureNonEmpty()
 })
 
-// 当前展示哪个请求子标签页
-type RequestTab = 'params' | 'headers' | 'body' | 'auth'
-const activeTab = ref<RequestTab>('params')
+// ─── Computed ───────────────────────────────────────────
 
-// 7 种 HTTP 方法(顺序:最常用 → 最少用)
+const activeTab = computed(() => tabsStore.activeTab)
+
+// 当前激活 Tab 的本地代理(用 computed getter/setter,实时同步到 store)
+const method = computed<HttpMethod>({
+  get: () => activeTab.value?.request.method ?? 'GET',
+  set: (m) => tabsStore.updateActiveRequest({ method: m }),
+})
+const url = computed<string>({
+  get: () => activeTab.value?.request.url ?? '',
+  set: (v) => tabsStore.updateActiveRequest({ url: v }),
+})
+const query = computed({
+  get: () => activeTab.value?.request.query ?? [],
+  set: (v) => tabsStore.updateActiveRequest({ query: v }),
+})
+const headers = computed({
+  get: () => activeTab.value?.request.headers ?? [],
+  set: (v) => tabsStore.updateActiveRequest({ headers: v }),
+})
+const body = computed({
+  get: () => activeTab.value?.request.body ?? { type: 'none' },
+  set: (v) => tabsStore.updateActiveRequest({ body: v }),
+})
+const auth = computed({
+  get: () => activeTab.value?.request.auth ?? { type: 'none' },
+  set: (v) => tabsStore.updateActiveRequest({ auth: v }),
+})
+
+const loading = computed(() => activeTab.value?.isLoading ?? false)
+const error = computed(() => activeTab.value?.error ?? null)
+const response = computed(() => activeTab.value?.response ?? null)
+
+// 请求子 tab(Params / Headers / Body / Auth)— 仅 UI 状态
+type SubTab = 'params' | 'headers' | 'body' | 'auth'
+const activeSubTab = ref<SubTab>('params')
+
+// ─── Constants ──────────────────────────────────────────
+
 const METHOD_OPTIONS: { label: HttpMethod; value: HttpMethod }[] = [
   { label: 'GET', value: 'GET' },
   { label: 'POST', value: 'POST' },
@@ -56,121 +91,93 @@ const METHOD_OPTIONS: { label: HttpMethod; value: HttpMethod }[] = [
   { label: 'OPTIONS', value: 'OPTIONS' },
 ]
 
-// 响应相关状态
-const loading = ref(false)
-const error = ref<string | null>(null)
-const response = ref<ApiResponse | null>(null)
-
-// 当前激活的环境变量(Week 6 真的接 Environment,这里先空对象)
-const activeVars = ref<Record<string, string>>({})
-
-// ─── 行为 ───────────────────────────────────────────────
-
-const message = useMessage()
-
-function setMethod(m: HttpMethod): void {
-  request.value.method = m
-}
+// ─── Actions ────────────────────────────────────────────
 
 async function sendRequest(): Promise<void> {
-  // 基本校验:URL 不能空
-  const url = request.value.url.trim()
-  if (!url) {
-    message.warning('URL 不能为空')
-    return
-  }
-  if (!/^https?:\/\//i.test(url)) {
-    message.warning('URL 必须以 http:// 或 https:// 开头')
-    return
-  }
-
-  loading.value = true
-  error.value = null
-  response.value = null
-
-  try {
-    // 调后端(在浏览器开发模式时走 useInvoke.ts 里的 mock)
-    response.value = await invokeT('execute_request', {
-      req: request.value,
-      vars: activeVars.value,
-    })
-  } catch (e) {
-    // invokeT 已经把 Tauri 的 anyhow 字符串 wrap 成 Error
-    error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    loading.value = false
-  }
+  await tabsStore.sendActive()
 }
 </script>
 
 <template>
   <div class="home-view">
-    <!-- ① 顶部:Method + URL + Send -->
-    <div class="toolbar">
-      <n-space :wrap-item="false" align="center" :size="8">
-        <n-select
-          :value="request.method"
-          :options="METHOD_OPTIONS"
-          style="width: 130px"
-          @update:value="setMethod"
-        />
-        <n-input
-          v-model:value="request.url"
-          placeholder="https://example.com/path"
-          clearable
-          :input-props="{ autocomplete: 'off' }"
-          style="flex: 1"
-          @keydown.enter="sendRequest"
-        />
-        <n-button
-          type="primary"
+    <!-- ① Tab 切换条 -->
+    <RequestTabs />
+
+    <!-- ② 顶部:Method + URL + Send(只要有 activeTab 就显示) -->
+    <template v-if="activeTab">
+      <div class="toolbar">
+        <n-space :wrap-item="false" align="center" :size="8">
+          <n-select
+            :value="method"
+            :options="METHOD_OPTIONS"
+            style="width: 130px"
+            @update:value="(v: HttpMethod) => (method = v)"
+          />
+          <n-input
+            v-model:value="url"
+            placeholder="https://example.com/path"
+            clearable
+            :input-props="{ autocomplete: 'off' }"
+            style="flex: 1"
+            @keydown.enter="sendRequest"
+          />
+          <n-button
+            type="primary"
+            :loading="loading"
+            :disabled="!url.trim()"
+            @click="sendRequest"
+          >
+            🚀 Send
+          </n-button>
+        </n-space>
+      </div>
+
+      <!-- ③ 中间:请求编辑器 -->
+      <section class="panel">
+        <n-tabs
+          v-model:value="activeSubTab"
+          type="line"
+          animated
+          class="request-tabs"
+        >
+          <n-tab-pane
+            name="params"
+            :tab="`Query Params (${query.length})`"
+          >
+            <KeyValueEditor v-model="query" />
+          </n-tab-pane>
+          <n-tab-pane
+            name="headers"
+            :tab="`Headers (${headers.length})`"
+          >
+            <KeyValueEditor v-model="headers" />
+          </n-tab-pane>
+          <n-tab-pane name="body" tab="Body">
+            <BodyEditor v-model="body" />
+          </n-tab-pane>
+          <n-tab-pane name="auth" tab="Auth">
+            <AuthEditor v-model="auth" />
+          </n-tab-pane>
+        </n-tabs>
+      </section>
+
+      <!-- ④ 底部:响应查看器 -->
+      <section class="panel">
+        <h3 class="panel-title">Response</h3>
+        <ResponseViewer
           :loading="loading"
-          :disabled="!request.url.trim()"
-          @click="sendRequest"
-        >
-          🚀 Send
-        </n-button>
-      </n-space>
-    </div>
+          :error="error"
+          :response="response"
+        />
+      </section>
+    </template>
 
-    <!-- ② 中间:请求编辑器 -->
-    <section class="panel">
-      <n-tabs
-        v-model:value="activeTab"
-        type="line"
-        animated
-        class="request-tabs"
-      >
-        <n-tab-pane
-          name="params"
-          :tab="`Query Params (${request.query.length})`"
-        >
-          <KeyValueEditor v-model="request.query" />
-        </n-tab-pane>
-        <n-tab-pane
-          name="headers"
-          :tab="`Headers (${request.headers.length})`"
-        >
-          <KeyValueEditor v-model="request.headers" />
-        </n-tab-pane>
-        <n-tab-pane name="body" tab="Body">
-          <BodyEditor v-model="request.body" />
-        </n-tab-pane>
-        <n-tab-pane name="auth" tab="Auth">
-          <AuthEditor v-model="request.auth" />
-        </n-tab-pane>
-      </n-tabs>
-    </section>
-
-    <!-- ③ 底部:响应查看器 -->
-    <section class="panel">
-      <h3 class="panel-title">Response</h3>
-      <ResponseViewer
-        :loading="loading"
-        :error="error"
-        :response="response"
-      />
-    </section>
+    <n-empty
+      v-else
+      description="点击 + 新建一个请求"
+      size="large"
+      style="margin-top: 64px"
+    />
   </div>
 </template>
 
@@ -184,15 +191,15 @@ async function sendRequest(): Promise<void> {
   gap: 12px;
 }
 
-/* 顶部工具栏:固定高度,不参与 flex 拉伸 */
+/* 顶部工具栏:固定高度 */
 .toolbar {
   flex-shrink: 0;
 }
 
-/* 请求区 + 响应区:各占一半高度,各自内部滚动 */
+/* 请求区 + 响应区:各占剩余高度,各自内部滚动 */
 .panel {
   flex: 1 1 0;
-  min-height: 0; /* 关键:让 flex 子项可以真正收缩并 overflow */
+  min-height: 0;
   border: 1px solid var(--n-border-color);
   border-radius: 4px;
   padding: 8px 12px 12px;
