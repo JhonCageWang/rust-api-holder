@@ -26,10 +26,30 @@ use api_holder_core::storage::Database;
 /// 持有:
 /// - `db`: SQLite 数据库连接(Week 3 才实装,目前只占位)
 /// - `http_client`: 共享的 reqwest::Client(所有 HTTP 请求复用,享受连接池)
+///
+/// ## ⚠️ 为什么 http_client **不**加 Mutex?
+///
+/// `reqwest::Client` 本身是 Send + Sync + 内部 Arc-like 的:
+///
+/// - 它的方法签名都是 `&self`,多个任务可以**并发持有共享引用**
+/// - 连接池是它的内部状态,自动并发管理
+/// - 加 `Mutex<Client>` 会强制串行 + 锁跨 await,反而**失去并发的优势**
+///
+/// 错误的写法(千万别这么改):
+/// ```ignore
+/// pub http_client: Mutex<reqwest::Client>,  // ← 串行!
+/// ```
+///
+/// 真的需要修改配置(如换 cookie store)时,用 `Arc<Client>` 或 `arc-swap`
+/// 原子替换,不要阻塞所有读端。
 pub struct AppState {
     /// SQLite 数据库连接(Week 3 才实装,目前只占位)
+    ///
+    /// SQLite 连接是**真的需要 Mutex**(rusqlite::Connection 不是线程安全)。
     pub db: Mutex<Option<Database>>,
-    /// 共享的 HTTP 客户端(连接池复用)
+    /// 共享的 HTTP 客户端(连接池复用)。
+    ///
+    /// 直接放裸 `Client`,**不要**包 Mutex,见上面 struct-level 注释。
     pub http_client: reqwest::Client,
 }
 

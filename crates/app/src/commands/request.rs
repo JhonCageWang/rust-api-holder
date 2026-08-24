@@ -46,6 +46,10 @@
 //!
 //! reqwest::Client 内部有连接池,频繁新建会丢失池化。
 //! AppState 里持有一个共享 Client,所有请求复用,生产环境必须这样做。
+//!
+//! ⚠️ 不要改成 `Mutex<Client>`:`Client` 本身就是 Send + Sync +
+//! 内部 Arc-like,加锁反而**强制串行 + 锁跨 await**,破坏并发。
+//! 这里直接 `&state.http_client` 是**正确**的写法。
 
 use std::collections::HashMap;
 
