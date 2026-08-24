@@ -80,7 +80,8 @@ CREATE TABLE IF NOT EXISTS variables (
     key            TEXT NOT NULL,
     value          TEXT NOT NULL,
     enabled        INTEGER NOT NULL DEFAULT 1,
-    FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+    FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
+    UNIQUE (environment_id, key)
 );
 
 -- 历史记录

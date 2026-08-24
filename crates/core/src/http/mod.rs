@@ -15,9 +15,10 @@ use std::time::{Duration, Instant};
 use crate::environment::interpolate;
 
 /// HTTP 方法枚举(覆盖常用方法)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Method {
+    #[default]
     Get,
     Post,
     Put,
@@ -164,7 +165,7 @@ impl Default for Auth {
 }
 
 /// 完整的 HTTP 请求定义
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Request {
     pub method: Method,
     pub url: String,

@@ -49,6 +49,21 @@ pub struct NewCollection {
     pub parent_id: Option<Uuid>,
 }
 
+/// 创建新请求时的输入参数
+///
+/// Repository 层会补充 `id`、`sort_order`、`created_at`、`updated_at`。
+#[derive(Debug, Clone)]
+pub struct NewRequest {
+    pub collection_id: Uuid,
+    pub name: String,
+    pub method: crate::http::Method,
+    pub url: String,
+    pub headers: Vec<crate::http::KeyValue>,
+    pub query: Vec<crate::http::KeyValue>,
+    pub body: crate::http::Body,
+    pub auth: crate::http::Auth,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
