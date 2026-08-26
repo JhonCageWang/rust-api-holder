@@ -141,6 +141,7 @@ fn main() {
             commands::requests::update_request_query,
             commands::requests::update_request_body,
             commands::requests::update_request_auth,
+            commands::requests::update_request,
             commands::requests::delete_request,
             commands::requests::search_requests,
             // 环境

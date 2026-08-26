@@ -2,16 +2,9 @@
 /**
  * Response 查看器
  *
- * 三种查看模式:
- * - Body  : 自动尝试 JSON 格式化(失败则原样),语法高亮
- * - Raw   : 原始字符串(未格式化)
- * - Headers: 键值对表格
- *
- * 顶部工具栏:status / 时间 / 大小 + Wrap toggle + Copy
- *
- * Wrap 行为:
- * - wrap=true  : 长行自动换行(`white-space: pre-wrap`),不丢信息
- * - wrap=false : 默认,横向滚动,适合看 JSON 原始结构
+ * 滚动策略:tab-body 内容区自己滚动(overflow:auto),滚动条出现在内容边缘。
+ * meta-bar + tab-bar 是普通 flex 头部,天然固定不随滚动消失(不需要 sticky)。
+ * v-show 切 tab,DOM 不销毁,内容不丢。
  */
 import { computed, ref } from 'vue'
 import { useMessage } from 'naive-ui'
@@ -26,13 +19,9 @@ const props = defineProps<{
 
 const message = useMessage()
 
-// 当前展示哪个标签页
 const activeTab = ref<'body' | 'headers' | 'raw'>('body')
-
-// Wrap toggle
 const wrap = ref(false)
 
-// 根据响应 content-type 推断 Body 高亮语言
 const bodyLanguage = computed<string>(() => {
   if (!props.response) return 'text'
   const ct = props.response.headers.find(
@@ -42,14 +31,24 @@ const bodyLanguage = computed<string>(() => {
   if (v.includes('json')) return 'json'
   if (v.includes('html')) return 'html'
   if (v.includes('xml')) return 'xml'
+  if (!v) {
+    // 没有 content-type(老历史记录):按内容嗅探 JSON
+    const body = props.response.body.trim()
+    if (body.startsWith('{') || body.startsWith('[')) {
+      try {
+        JSON.parse(body)
+        return 'json'
+      } catch {
+        // 不是合法 JSON,按 text 展示
+      }
+    }
+  }
   return 'text'
 })
 
-// Body 自动 JSON 格式化(只在能 parse 的情况下)
 const prettyBody = computed<string>(() => {
   const raw = props.response?.body ?? ''
   if (!raw) return ''
-  // 只在 JSON 语言时尝试美化,其他(text/html/xml)保持原样
   if (bodyLanguage.value !== 'json') return raw
   try {
     const parsed = JSON.parse(raw)
@@ -59,20 +58,18 @@ const prettyBody = computed<string>(() => {
   }
 })
 
-// 状态码 → tag 颜色
 const statusColor = computed<
   'default' | 'success' | 'warning' | 'error'
 >(() => {
   if (!props.response) return 'default'
   const s = props.response.status
-  if (s === 0) return 'error' // 网络失败 / 连接被拒
+  if (s === 0) return 'error'
   if (s >= 200 && s < 300) return 'success'
   if (s >= 300 && s < 400) return 'warning'
   if (s >= 400 && s < 600) return 'error'
   return 'default'
 })
 
-// 工具函数
 function fmtMs(ms: number): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`
 }
@@ -92,7 +89,6 @@ async function copy(text: string, label = '已复制'): Promise<void> {
   }
 }
 
-// 复制当前激活 tab 的内容
 async function copyCurrent(): Promise<void> {
   if (!props.response) return
   if (activeTab.value === 'body') {
@@ -100,7 +96,6 @@ async function copyCurrent(): Promise<void> {
   } else if (activeTab.value === 'raw') {
     await copy(props.response.body, '已复制原始 Body')
   } else {
-    // headers
     const text = props.response.headers
       .map((h) => `${h.key}: ${h.value}`)
       .join('\n')
@@ -108,7 +103,6 @@ async function copyCurrent(): Promise<void> {
   }
 }
 
-// 复制全部(响应三部分拼接)
 async function copyAll(): Promise<void> {
   if (!props.response) return
   const r = props.response
@@ -126,20 +120,21 @@ async function copyAll(): Promise<void> {
 
 <template>
   <div class="response-viewer">
-    <n-spin :show="loading">
-      <!-- 错误优先显示 -->
-      <n-alert
-        v-if="error"
-        type="error"
-        title="请求失败"
-        closable
-        style="margin-bottom: 12px"
-      >
-        {{ error }}
-      </n-alert>
+    <div v-if="loading" class="loading-tip">请求中...</div>
 
-      <template v-if="response">
-        <!-- 顶部 meta 条 + 工具按钮 -->
+    <n-alert
+      v-if="error"
+      type="error"
+      title="请求失败"
+      closable
+      style="margin-bottom: 12px"
+    >
+      {{ error }}
+    </n-alert>
+
+    <template v-if="response">
+      <!-- 固定头部:meta-bar + tab-bar 不随内容滚动 -->
+      <div class="resp-header">
         <div class="meta-bar">
           <n-space align="center" :wrap-item="false">
             <n-tag :type="statusColor" round size="large" strong>
@@ -147,151 +142,110 @@ async function copyAll(): Promise<void> {
             </n-tag>
             <n-text depth="3">⏱ {{ fmtMs(response.duration_ms) }}</n-text>
             <n-text depth="3">📦 {{ fmtBytes(response.size_bytes) }}</n-text>
-            <n-tag
-              v-if="response.headers.length > 0"
-              size="small"
-              :bordered="false"
-            >
-              {{ response.headers.length }} headers
-            </n-tag>
           </n-space>
 
           <n-space :wrap-item="false">
-            <!-- Wrap toggle(只在 body/raw tab 有意义) -->
-            <n-tooltip
-              v-if="activeTab !== 'headers'"
-              placement="bottom"
-            >
-              <template #trigger>
-                <n-button
-                  size="small"
-                  quaternary
-                  @click="wrap = !wrap"
-                >
-                  {{ wrap ? '↩ No Wrap' : '↩ Wrap' }}
-                </n-button>
-              </template>
-              {{ wrap ? '当前:长行自动换行' : '当前:横向滚动' }}
-            </n-tooltip>
-
-            <!-- 复制当前 tab 内容 -->
             <n-button
+              v-if="activeTab !== 'headers'"
               size="small"
               quaternary
-              :disabled="!response.body && response.headers.length === 0"
-              @click="copyCurrent"
+              @click="wrap = !wrap"
             >
+              {{ wrap ? '↩ No Wrap' : '↩ Wrap' }}
+            </n-button>
+            <n-button size="small" quaternary @click="copyCurrent">
               📋 Copy
             </n-button>
-
-            <!-- 复制全部 -->
-            <n-button
-              size="small"
-              quaternary
-              @click="copyAll"
-            >
+            <n-button size="small" quaternary @click="copyAll">
               📋 Copy All
             </n-button>
           </n-space>
         </div>
 
-        <!-- 标签页:Body / Raw / Headers -->
-        <n-tabs v-model:value="activeTab" type="line" animated>
-          <!-- Body:自动 JSON 格式化 + 语法高亮 -->
-          <n-tab-pane name="body" tab="Body">
-            <div
-              v-if="response.body"
-              class="code-container"
-              :class="{ wrap }"
-            >
-              <n-code
-                :code="prettyBody"
-                :language="bodyLanguage"
-                style="margin-top: 8px; font-size: 13px; border-radius: 4px"
-              />
-            </div>
-            <n-empty
-              v-else
-              description="(响应体为空)"
-              size="small"
-              style="margin-top: 16px"
-            />
-          </n-tab-pane>
+        <div class="tab-bar">
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'body' }"
+            @click="activeTab = 'body'"
+          >Body</button>
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'raw' }"
+            @click="activeTab = 'raw'"
+          >Raw</button>
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'headers' }"
+            @click="activeTab = 'headers'"
+          >Headers ({{ response.headers.length }})</button>
+        </div>
+      </div>
 
-          <!-- Raw:原始 body,未格式化 -->
-          <n-tab-pane name="raw" tab="Raw">
-            <div
-              v-if="response.body"
-              class="code-container"
-              :class="{ wrap }"
-            >
-              <n-code
-                :code="response.body"
-                language="text"
-                style="margin-top: 8px; font-size: 13px; border-radius: 4px"
-              />
-            </div>
-            <n-empty
-              v-else
-              description="(响应体为空)"
-              size="small"
-              style="margin-top: 16px"
-            />
-          </n-tab-pane>
+      <!-- 内容区:v-show 切 tab 不销毁 DOM,内容保留 -->
+      <div v-show="activeTab === 'body'" class="tab-body">
+        <pre v-if="response.body" class="code-block" :class="{ wrap }">{{ prettyBody }}</pre>
+        <n-empty v-else description="(响应体为空)" size="small" style="margin-top:16px" />
+      </div>
 
-          <!-- Headers:键值对表格 -->
-          <n-tab-pane
-            name="headers"
-            :tab="`Headers (${response.headers.length})`"
-          >
-            <n-table
-              v-if="response.headers.length > 0"
-              :bordered="false"
-              :single-line="false"
-              size="small"
-              striped
-              style="margin-top: 8px"
-            >
-              <thead>
-                <tr>
-                  <th style="width: 30%">Key</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(h, idx) in response.headers" :key="idx">
-                  <td>
-                    <n-text code>{{ h.key }}</n-text>
-                  </td>
-                  <td>
-                    <n-text code>{{ h.value }}</n-text>
-                  </td>
-                </tr>
-              </tbody>
-            </n-table>
-            <n-empty
-              v-else
-              description="(响应头为空)"
-              size="small"
-              style="margin-top: 16px"
-            />
-          </n-tab-pane>
-        </n-tabs>
-      </template>
+      <div v-show="activeTab === 'raw'" class="tab-body">
+        <pre v-if="response.body" class="code-block" :class="{ wrap }">{{ response.body }}</pre>
+        <n-empty v-else description="(响应体为空)" size="small" style="margin-top:16px" />
+      </div>
 
-      <n-empty
-        v-else-if="!loading && !error"
-        description="还没发送请求 · 点击右上角 Send"
-        size="medium"
-        style="margin-top: 32px"
-      />
-    </n-spin>
+      <div v-show="activeTab === 'headers'" class="tab-body">
+        <n-table
+          v-if="response.headers.length > 0"
+          :bordered="false"
+          :single-line="false"
+          size="small"
+          striped
+        >
+          <thead>
+            <tr><th style="width:30%">Key</th><th>Value</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(h, idx) in response.headers" :key="idx">
+              <td><n-text code>{{ h.key }}</n-text></td>
+              <td><n-text code>{{ h.value }}</n-text></td>
+            </tr>
+          </tbody>
+        </n-table>
+        <n-empty v-else description="(响应头为空)" size="small" style="margin-top:16px" />
+      </div>
+    </template>
+
+    <n-empty
+      v-else-if="!loading && !error"
+      description="还没发送请求 · 点击右上角 Send"
+      size="medium"
+      style="margin-top: 32px"
+    />
   </div>
 </template>
 
 <style scoped>
+/*
+ * 自己是 flex 列:撑满外层 panel,头部固定,内容区滚动。
+ * 外层 panel(HomeView) 是 overflow:hidden,不再负责滚动。
+ */
 .response-viewer {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.loading-tip {
+  text-align: center;
+  padding: 24px;
+  color: var(--n-text-color-3);
+}
+
+/* 固定头部:不滚动 */
+.resp-header {
+  flex-shrink: 0;
 }
 
 .meta-bar {
@@ -299,28 +253,60 @@ async function copyAll(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 
-.code-container {
-  margin-top: 8px;
-  border-radius: 4px;
-  background: rgba(250, 250, 250, 0.6);
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--n-border-color);
 }
 
-/* Wrap 模式:长行换行,适合窄屏 */
-.code-container.wrap :deep(.n-code) {
+.tab-btn {
+  padding: 6px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--n-text-color-3);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--n-text-color-1);
+}
+
+.tab-btn.active {
+  color: var(--n-primary-color);
+  border-bottom-color: var(--n-primary-color);
+  font-weight: 600;
+}
+
+/* 内容区:自己滚动,滚动条在内容边缘;长行(pre)也能横向滚 */
+.tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.code-block {
+  margin: 0;
+  padding: 8px;
+  min-height: 100%;
+  font-size: 13px;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  background: var(--n-action-color);
+  border-radius: 6px;
+  white-space: pre;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.code-block.wrap {
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-/* No Wrap 模式(默认):横向滚动,保留原始结构 */
-.code-container:not(.wrap) {
-  overflow-x: auto;
-}
-
-.code-container:not(.wrap) :deep(.n-code) {
-  white-space: pre;
 }
 </style>

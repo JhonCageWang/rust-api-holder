@@ -47,34 +47,47 @@ export interface CommandSignatures {
 
   // ===== HTTP =====
   execute_request: {
-    args: { req: ApiRequest; vars?: Record<string, string> }
+    args: { req: ApiRequest; vars?: Record<string, string>; requestId?: string }
     returns: ApiResponse
   }
 
   // ===== 集合 =====
   list_collections: { args: undefined; returns: Collection[] }
   create_collection: {
-    args: { name: string; description: string | null; parent_id: string | null }
+    args: { name: string; description: string | null; parentId: string | null }
     returns: Collection
   }
-  rename_collection: { args: { id: string; new_name: string }; returns: null }
+  rename_collection: { args: { id: string; newName: string }; returns: null }
   delete_collection: { args: { id: string }; returns: null }
   count_collection_requests: { args: { id: string }; returns: number }
 
   // ===== 请求 =====
-  list_requests: { args: { collection_id: string }; returns: RequestItem[] }
+  list_requests: { args: { collectionId: string }; returns: RequestItem[] }
   get_request: { args: { id: string }; returns: RequestItem }
   create_request: { args: { new: NewRequest }; returns: RequestItem }
-  rename_request: { args: { id: string; new_name: string }; returns: null }
-  update_request_url: { args: { id: string; new_url: string }; returns: null }
+  rename_request: { args: { id: string; newName: string }; returns: null }
+  update_request_url: { args: { id: string; newUrl: string }; returns: null }
   update_request_method: {
-    args: { id: string; new_method: ApiRequest['method'] }
+    args: { id: string; newMethod: ApiRequest['method'] }
     returns: null
   }
   update_request_headers: { args: { id: string; headers: any[] }; returns: null }
   update_request_query: { args: { id: string; query: any[] }; returns: null }
   update_request_body: { args: { id: string; body: any }; returns: null }
   update_request_auth: { args: { id: string; auth: any }; returns: null }
+  update_request: {
+    args: {
+      id: string
+      name: string
+      method: ApiRequest['method']
+      url: string
+      headers: any[]
+      query: any[]
+      body: any
+      auth: any
+    }
+    returns: null
+  }
   delete_request: { args: { id: string }; returns: null }
   search_requests: { args: { keyword: string }; returns: RequestItem[] }
 
@@ -82,23 +95,23 @@ export interface CommandSignatures {
   list_environments: { args: undefined; returns: Environment[] }
   get_active_environment: { args: undefined; returns: Environment | null }
   create_environment: { args: { name: string }; returns: Environment }
-  rename_environment: { args: { id: string; new_name: string }; returns: null }
+  rename_environment: { args: { id: string; newName: string }; returns: null }
   set_active_environment: { args: { id: string }; returns: null }
   delete_environment: { args: { id: string }; returns: null }
 
   // ===== 变量 =====
-  list_variables: { args: { environment_id: string }; returns: Variable[] }
+  list_variables: { args: { environmentId: string }; returns: Variable[] }
   create_variable: {
-    args: { environment_id: string; key: string; value: string }
+    args: { environmentId: string; key: string; value: string }
     returns: Variable
   }
   update_variable: {
-    args: { id: string; new_value: string; enabled: boolean }
+    args: { id: string; newValue: string; enabled: boolean }
     returns: null
   }
   delete_variable: { args: { id: string }; returns: null }
   bulk_replace_variables: {
-    args: { environment_id: string; variables: Variable[] }
+    args: { environmentId: string; variables: Variable[] }
     returns: null
   }
 
@@ -263,7 +276,7 @@ async function mockInvoke<C extends CommandName>(
       } as CommandSignatures[C]['returns']
 
     case 'execute_request': {
-      const a = args as { req: ApiRequest; vars?: Record<string, string> }
+      const a = args as { req: ApiRequest; vars?: Record<string, string>; requestId?: string }
       const echoBody = JSON.stringify(
         {
           mock: true,
@@ -281,7 +294,7 @@ async function mockInvoke<C extends CommandName>(
         null,
         2,
       )
-      return {
+      const mockResponse: ApiResponse = {
         status: 200,
         status_text: 'OK (mock)',
         headers: [
@@ -290,19 +303,31 @@ async function mockInvoke<C extends CommandName>(
         body: echoBody,
         duration_ms: 123,
         size_bytes: echoBody.length,
-      } as CommandSignatures[C]['returns']
+      }
+      // Record history in mock
+      const histEntry: HistoryEntry = {
+        id: mockId('mock-hist'),
+        request_id: a.requestId ?? null,
+        request_snapshot: a.req,
+        response: mockResponse,
+        error: null,
+        sent_at: new Date().toISOString(),
+      }
+      db.history.unshift(histEntry)
+      saveMockDb(db)
+      return mockResponse as CommandSignatures[C]['returns']
     }
 
     case 'list_collections':
       return db.collections as CommandSignatures[C]['returns']
 
     case 'create_collection': {
-      const a = args as { name: string; description: string | null; parent_id: string | null }
+      const a = args as { name: string; description: string | null; parentId: string | null }
       const c: Collection = {
         id: mockId('mock-coll'),
         name: a.name,
         description: a.description,
-        parent_id: a.parent_id,
+        parent_id: a.parentId,
         sort_order: db.collections.length,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -313,10 +338,10 @@ async function mockInvoke<C extends CommandName>(
     }
 
     case 'rename_collection': {
-      const a = args as { id: string; new_name: string }
+      const a = args as { id: string; newName: string }
       const c = db.collections.find((x) => x.id === a.id)
       if (!c) throw new Error('collection not found')
-      c.name = a.new_name
+      c.name = a.newName
       c.updated_at = new Date().toISOString()
       saveMockDb(db)
       return null as CommandSignatures[C]['returns']
@@ -337,8 +362,8 @@ async function mockInvoke<C extends CommandName>(
     }
 
     case 'list_requests': {
-      const a = args as { collection_id: string }
-      return db.requests.filter((r) => r.collection_id === a.collection_id) as CommandSignatures[C]['returns']
+      const a = args as { collectionId: string }
+      return db.requests.filter((r) => r.collection_id === a.collectionId) as CommandSignatures[C]['returns']
     }
 
     case 'get_request': {
@@ -367,6 +392,31 @@ async function mockInvoke<C extends CommandName>(
       db.requests.push(r)
       saveMockDb(db)
       return r as CommandSignatures[C]['returns']
+    }
+
+    case 'update_request': {
+      const a = args as {
+        id: string
+        name: string
+        method: ApiRequest['method']
+        url: string
+        headers: any[]
+        query: any[]
+        body: any
+        auth: any
+      }
+      const r = db.requests.find((x) => x.id === a.id)
+      if (!r) throw new Error('request not found')
+      r.name = a.name
+      r.method = a.method
+      r.url = a.url
+      r.headers = a.headers
+      r.query = a.query
+      r.body = a.body
+      r.auth = a.auth
+      r.updated_at = new Date().toISOString()
+      saveMockDb(db)
+      return null as CommandSignatures[C]['returns']
     }
 
     case 'rename_request':
@@ -419,23 +469,39 @@ async function mockInvoke<C extends CommandName>(
       return e as CommandSignatures[C]['returns']
     }
 
-    case 'rename_environment':
-    case 'set_active_environment':
+    case 'rename_environment': {
+      const a = args as { id: string; newName: string }
+      const env = db.environments.find((e) => e.id === a.id)
+      if (env) env.name = a.newName
+      saveMockDb(db)
+      return null as CommandSignatures[C]['returns']
+    }
+
+    case 'set_active_environment': {
+      const a = args as { id: string }
+      for (const e of db.environments) e.is_active = e.id === a.id
+      saveMockDb(db)
+      return null as CommandSignatures[C]['returns']
+    }
+
     case 'delete_environment': {
+      const a = args as { id: string }
+      db.environments = db.environments.filter((e) => e.id !== a.id)
+      db.variables = db.variables.filter((v) => v.environment_id !== a.id)
       saveMockDb(db)
       return null as CommandSignatures[C]['returns']
     }
 
     case 'list_variables': {
-      const a = args as { environment_id: string }
-      return db.variables.filter((v) => v.environment_id === a.environment_id) as CommandSignatures[C]['returns']
+      const a = args as { environmentId: string }
+      return db.variables.filter((v) => v.environment_id === a.environmentId) as CommandSignatures[C]['returns']
     }
 
     case 'create_variable': {
-      const a = args as { environment_id: string; key: string; value: string }
+      const a = args as { environmentId: string; key: string; value: string }
       const v: Variable = {
         id: mockId('mock-var'),
-        environment_id: a.environment_id,
+        environment_id: a.environmentId,
         key: a.key,
         value: a.value,
         enabled: true,
@@ -446,8 +512,17 @@ async function mockInvoke<C extends CommandName>(
     }
 
     case 'update_variable':
-    case 'delete_variable':
+    case 'delete_variable': {
+      saveMockDb(db)
+      return null as CommandSignatures[C]['returns']
+    }
+
     case 'bulk_replace_variables': {
+      const a = args as { environmentId: string; variables: Variable[] }
+      db.variables = db.variables.filter((v) => v.environment_id !== a.environmentId)
+      for (const v of a.variables) {
+        db.variables.push({ ...v, environment_id: a.environmentId })
+      }
       saveMockDb(db)
       return null as CommandSignatures[C]['returns']
     }

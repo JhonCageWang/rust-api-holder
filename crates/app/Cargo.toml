@@ -29,6 +29,9 @@ serde_json = { workspace = true }
 # UUID 解析
 uuid = { workspace = true }
 
+# 时间戳(history 记录用)
+chrono = { workspace = true }
+
 # 异步
 tokio = { workspace = true }
 

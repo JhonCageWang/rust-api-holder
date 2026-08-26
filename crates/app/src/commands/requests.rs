@@ -146,6 +146,35 @@ pub async fn update_request_auth(
         .map_err(|e| e.to_string())
 }
 
+/// 全量更新(一条 SQL 更新所有字段)
+#[tauri::command]
+pub async fn update_request(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    method: Method,
+    url: String,
+    headers: Vec<KeyValue>,
+    query: Vec<KeyValue>,
+    body: Body,
+    auth: Auth,
+) -> Result<(), String> {
+    state
+        .db
+        .requests()
+        .update_full(
+            parse_id(&id)?,
+            name,
+            method,
+            url,
+            headers,
+            query,
+            body,
+            auth,
+        )
+        .map_err(|e| e.to_string())
+}
+
 /// 删除请求
 #[tauri::command]
 pub async fn delete_request(

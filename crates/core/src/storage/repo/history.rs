@@ -17,7 +17,7 @@
 use rusqlite::{params, Row};
 
 use crate::error::Error;
-use crate::http::{Method, Request, Response};
+use crate::http::{KeyValue, Method, Request, Response};
 use crate::history::HistoryEntry;
 use crate::Result;
 
@@ -43,10 +43,10 @@ impl<'a> HistoryRepo<'a> {
         let method_str = method_to_str(entry.request_snapshot.method);
         let url_str = entry.request_snapshot.url.clone();
         let req_snapshot = to_json(&entry.request_snapshot)?;
-        let resp_snapshot = entry
+        let resp_headers = entry
             .response
             .as_ref()
-            .map(to_json)
+            .map(|r| to_json(&r.headers))
             .transpose()?;
         let sent_at_ts = to_unix(entry.sent_at);
 
@@ -64,7 +64,7 @@ impl<'a> HistoryRepo<'a> {
                     url_str,
                     req_snapshot,
                     entry.response.as_ref().map(|r| r.status as i64),
-                    resp_snapshot.as_ref().and_then(|s| extract_headers(s)),
+                    resp_headers,
                     entry.response.as_ref().map(|r| r.body.clone()),
                     entry.response.as_ref().map(|r| r.duration_ms as i64),
                     entry.error,
@@ -80,7 +80,8 @@ impl<'a> HistoryRepo<'a> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, request_id, method, url, request_snapshot,
-                        status_code, response_body, duration_ms, error, sent_at
+                        status_code, response_headers, response_body,
+                        duration_ms, error, sent_at
                  FROM history
                  ORDER BY sent_at DESC
                  LIMIT ?1 OFFSET ?2",
@@ -97,7 +98,8 @@ impl<'a> HistoryRepo<'a> {
         self.db.with_conn(|conn| {
             conn.query_row(
                 "SELECT id, request_id, method, url, request_snapshot,
-                        status_code, response_body, duration_ms, error, sent_at
+                        status_code, response_headers, response_body,
+                        duration_ms, error, sent_at
                  FROM history WHERE id = ?1",
                 params![id_str],
                 row_to_history,
@@ -191,12 +193,6 @@ fn method_from_str(s: &str) -> rusqlite::Result<Method> {
     }
 }
 
-/// 从响应 JSON 里提取 headers(JSON 序列化是 `Vec<KeyValue>`)
-fn extract_headers(_resp_json: &str) -> Option<String> {
-    // 不解析了,headers 直接存 NULL,前端从 response body 拿
-    None
-}
-
 fn row_to_history(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
     let id_str: String = row.get(0)?;
     let req_id_str: Option<String> = row.get(1)?;
@@ -204,19 +200,32 @@ fn row_to_history(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
     let url: String = row.get(3)?;
     let req_snapshot: String = row.get(4)?;
     let status_code: Option<i64> = row.get(5)?;
-    let response_body: Option<String> = row.get(6)?;
-    let duration_ms: Option<i64> = row.get(7)?;
-    let error: Option<String> = row.get(8)?;
-    let sent_at_ts: i64 = row.get(9)?;
+    let resp_headers: Option<String> = row.get(6)?;
+    let response_body: Option<String> = row.get(7)?;
+    let duration_ms: Option<i64> = row.get(8)?;
+    let error: Option<String> = row.get(9)?;
+    let sent_at_ts: i64 = row.get(10)?;
 
-    // 重构 Response(简化版,headers 暂时丢)
-    let response = status_code.map(|status| Response {
-        status: status as u16,
-        status_text: String::new(),
-        headers: vec![],
-        body: response_body.unwrap_or_default(),
-        duration_ms: duration_ms.unwrap_or(0) as u64,
-        size_bytes: 0,
+    // 重构完整 Response(headers 反序列化失败就丢成空,不影响整行)
+    let response = status_code.map(|status| {
+        let status = status as u16;
+        let headers: Vec<crate::http::KeyValue> = resp_headers
+            .as_deref()
+            .and_then(|s| from_json(s).ok())
+            .unwrap_or_default();
+        let body = response_body.unwrap_or_default();
+        Response {
+            status,
+            status_text: reqwest::StatusCode::from_u16(status)
+                .ok()
+                .and_then(|s| s.canonical_reason())
+                .unwrap_or("")
+                .to_string(),
+            headers,
+            size_bytes: body.len(),
+            body,
+            duration_ms: duration_ms.unwrap_or(0) as u64,
+        }
     });
 
     let mut request_snapshot: Request = from_json(&req_snapshot).map_err(serde_err)?;
@@ -277,7 +286,11 @@ mod tests {
             response: Some(Response {
                 status,
                 status_text: "OK".into(),
-                headers: vec![],
+                headers: vec![KeyValue {
+                    key: "content-type".into(),
+                    value: "application/json".into(),
+                    enabled: true,
+                }],
                 body: "body".into(),
                 duration_ms: 100,
                 size_bytes: 4,
@@ -360,7 +373,13 @@ mod tests {
         db.history().record(&e).unwrap();
         let found = db.history().find_by_id(e.id).unwrap();
         assert_eq!(found.request_snapshot.url, "x");
-        assert_eq!(found.response.as_ref().unwrap().status, 200);
+        let resp = found.response.as_ref().unwrap();
+        assert_eq!(resp.status, 200);
+        // 完整回显:headers / status_text / size_bytes 都要重建
+        assert_eq!(resp.headers.len(), 1);
+        assert_eq!(resp.headers[0].key, "content-type");
+        assert_eq!(resp.status_text, "OK");
+        assert_eq!(resp.size_bytes, 4);
     }
 
     #[test]

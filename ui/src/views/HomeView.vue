@@ -23,8 +23,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 
 import { useTabsStore } from '@/stores/tabs'
+import { useAppStore } from '@/stores/app'
 import { invokeT } from '@/composables/useInvoke'
-import type { Collection, HttpMethod } from '@/types/api'
+import type { Collection, HttpMethod, KeyValue } from '@/types/api'
 
 import RequestTabs from '@/components/RequestTabs.vue'
 import KeyValueEditor from '@/components/request/KeyValueEditor.vue'
@@ -33,10 +34,8 @@ import AuthEditor from '@/components/request/AuthEditor.vue'
 import ResponseViewer from '@/components/request/ResponseViewer.vue'
 
 const message = useMessage()
-
-// ─── Store ──────────────────────────────────────────────
-
 const tabsStore = useTabsStore()
+const appStore = useAppStore()
 
 // ─── Lifecycle ──────────────────────────────────────────
 
@@ -89,6 +88,8 @@ const showSaveModal = ref(false)
 const saveTargetCollId = ref<string | null>(null)
 const saveRequestName = ref('')
 
+const isSaved = computed(() => activeTab.value?.requestId !== null)
+
 async function loadCollections() {
   try {
     collections.value = await invokeT('list_collections', undefined)
@@ -97,10 +98,30 @@ async function loadCollections() {
   }
 }
 
+/** Save 按钮:已保存 → 静默更新;未保存 → 打开对话框 */
+function handleSave() {
+  if (!activeTab.value) return
+  if (activeTab.value.requestId !== null) {
+    void saveExisting()
+  } else {
+    openSaveDialog()
+  }
+}
+
+/** 已保存的请求:直接更新 DB */
+async function saveExisting() {
+  try {
+    await tabsStore.saveActive()
+    message.success('已保存', { duration: 1500 })
+    appStore.bumpSidebar()
+  } catch (e) {
+    message.error(`保存失败: ${(e as Error).message}`)
+  }
+}
+
 function openSaveDialog() {
   if (!activeTab.value) return
   loadCollections()
-  // 从 URL 提取默认名字(最后一段路径)
   try {
     const u = new URL(url.value)
     const last = u.pathname.split('/').filter(Boolean).pop() || u.host
@@ -120,20 +141,10 @@ async function confirmSave() {
   }
   const name = saveRequestName.value.trim() || 'Untitled'
   try {
-    await invokeT('create_request', {
-      new: {
-        collection_id: saveTargetCollId.value,
-        name,
-        method: method.value,
-        url: url.value,
-        headers: headers.value,
-        query: query.value,
-        body: body.value,
-        auth: auth.value,
-      },
-    })
-    message.success(`已保存到集合`)
+    await tabsStore.saveActive(saveTargetCollId.value, name)
+    message.success('已保存到集合')
     showSaveModal.value = false
+    appStore.bumpSidebar()
   } catch (e) {
     message.error(`保存失败: ${(e as Error).message}`)
   }
@@ -149,6 +160,14 @@ const METHOD_OPTIONS: { label: HttpMethod; value: HttpMethod }[] = [
   { label: 'DELETE', value: 'DELETE' },
   { label: 'HEAD', value: 'HEAD' },
   { label: 'OPTIONS', value: 'OPTIONS' },
+]
+
+// Headers 预填行:默认不勾选,填值或勾选后才真正加入请求
+const HEADER_PRESETS: (KeyValue & { placeholder?: string })[] = [
+  { key: 'Authorization', value: '', enabled: false, placeholder: 'Bearer <token>' },
+  { key: 'Content-Type', value: 'application/json', enabled: false },
+  { key: 'Accept', value: 'application/json', enabled: false },
+  { key: 'Cache-Control', value: 'no-cache', enabled: false },
 ]
 
 // ─── Actions ────────────────────────────────────────────
@@ -181,7 +200,13 @@ async function sendRequest(): Promise<void> {
             style="flex: 1"
             @keydown.enter="sendRequest"
           />
-          <n-button @click="openSaveDialog">💾 保存</n-button>
+          <n-button
+            :type="isSaved ? 'default' : 'primary'"
+            :ghost="isSaved && !activeTab?.isDirty"
+            @click="handleSave"
+          >
+            {{ isSaved ? '💾' : '💾 保存' }}
+          </n-button>
           <n-button
             type="primary"
             :loading="loading"
@@ -194,11 +219,10 @@ async function sendRequest(): Promise<void> {
       </div>
 
       <!-- ③ 中间:请求编辑器 -->
-      <section class="panel">
+      <section class="panel panel-request">
         <n-tabs
           v-model:value="activeSubTab"
           type="line"
-          animated
           class="request-tabs"
         >
           <n-tab-pane
@@ -211,7 +235,7 @@ async function sendRequest(): Promise<void> {
             name="headers"
             :tab="`Headers (${headers.length})`"
           >
-            <KeyValueEditor v-model="headers" />
+            <KeyValueEditor v-model="headers" :presets="HEADER_PRESETS" />
           </n-tab-pane>
           <n-tab-pane name="body" tab="Body">
             <BodyEditor v-model="body" />
@@ -223,7 +247,7 @@ async function sendRequest(): Promise<void> {
       </section>
 
       <!-- ④ 底部:响应查看器 -->
-      <section class="panel">
+      <section class="panel panel-response">
         <h3 class="panel-title">Response</h3>
         <ResponseViewer
           :loading="loading"
@@ -286,16 +310,18 @@ async function sendRequest(): Promise<void> {
   flex-shrink: 0;
 }
 
-/* 请求区 + 响应区:各占剩余高度,各自内部滚动 */
+/* 请求区 + 响应区:卡片式,各占剩余高度 */
 .panel {
   flex: 1 1 0;
   min-height: 0;
   border: 1px solid var(--n-border-color);
-  border-radius: 4px;
-  padding: 8px 12px 12px;
+  border-radius: 10px;
+  padding: 10px 14px 14px;
   overflow: auto;
   display: flex;
   flex-direction: column;
+  background: var(--n-card-color);
+  box-shadow: var(--n-box-shadow-1);
 }
 
 .panel-title {
@@ -303,6 +329,21 @@ async function sendRequest(): Promise<void> {
   font-size: 14px;
   font-weight: 600;
   color: var(--n-text-color-2);
+  flex-shrink: 0;
+}
+
+/* 请求面板:不在 panel 上滚动,让 tab 内容区自己滚动 */
+.panel-request {
+  overflow: hidden;
+}
+
+.panel-request :deep(.n-tab-pane) {
+  overflow-y: auto;
+}
+
+/* 响应面板:不在 panel 上滚动,ResponseViewer 的 tab-body 自己滚动 */
+.panel-response {
+  overflow: hidden;
 }
 
 /* 让 NTabs 内部的 n-tab-pane 占满剩余高度 */

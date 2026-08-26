@@ -292,6 +292,63 @@ impl<'a> RequestRepo<'a> {
         })
     }
 
+    /// 全量更新(一条 SQL 更新所有字段,比调用 6 个单独 update 更高效)
+    pub fn update_full(
+        &self,
+        id: uuid::Uuid,
+        name: String,
+        method: Method,
+        url: String,
+        headers: Vec<KeyValue>,
+        query: Vec<KeyValue>,
+        body: Body,
+        auth: Auth,
+    ) -> Result<()> {
+        if name.trim().is_empty() {
+            return Err(Error::InvalidInput("request name 不能为空".into()));
+        }
+        if url.trim().is_empty() {
+            return Err(Error::InvalidInput("request url 不能为空".into()));
+        }
+
+        let id_str = id.to_string();
+        let now_ts = to_unix(chrono::Utc::now());
+        let method_str = method_to_str(method);
+        let headers_json = to_json(&headers)?;
+        let query_json = to_json(&query)?;
+        let body_type_str = body_type_str(&body);
+        let body_content_str = body_content(&body);
+        let auth_type_str = auth_type_str(&auth);
+        let auth_json = to_json(&auth)?;
+
+        self.db.with_conn(|conn| {
+            let changed = conn.execute(
+                "UPDATE requests SET
+                    name = ?1, method = ?2, url = ?3, headers = ?4, query_params = ?5,
+                    body_type = ?6, body_content = ?7, auth_type = ?8, auth_config = ?9,
+                    updated_at = ?10
+                 WHERE id = ?11",
+                params![
+                    name,
+                    method_str,
+                    url,
+                    headers_json,
+                    query_json,
+                    body_type_str,
+                    body_content_str,
+                    auth_type_str,
+                    auth_json,
+                    now_ts,
+                    id_str,
+                ],
+            )?;
+            if changed == 0 {
+                return Err(Error::NotFound(format!("request {id}")));
+            }
+            Ok(())
+        })
+    }
+
     /// 删除请求。
     ///
     /// **级联**:`history` 表的 `request_id` 是 `ON DELETE SET NULL`,所以历史保留
@@ -656,6 +713,47 @@ mod tests {
         let results = db.requests().search("orders").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "List orders");
+    }
+
+    #[test]
+    fn test_update_full() {
+        let (db, coll_id) = setup();
+        let req = db.requests().create(new_req(coll_id)).unwrap();
+
+        db.requests()
+            .update_full(
+                req.id,
+                "Updated".into(),
+                Method::Post,
+                "https://api.example.com/v2/updated".into(),
+                vec![KeyValue {
+                    key: "X-Test".into(),
+                    value: "yes".into(),
+                    enabled: false,
+                }],
+                vec![KeyValue {
+                    key: "page".into(),
+                    value: "2".into(),
+                    enabled: true,
+                }],
+                Body::Json {
+                    content: r#"{"k":"v"}"#.into(),
+                },
+                Auth::Bearer {
+                    token: "tok123".into(),
+                },
+            )
+            .unwrap();
+
+        let found = db.requests().find_by_id(req.id).unwrap();
+        assert_eq!(found.name, "Updated");
+        assert!(matches!(found.method, Method::Post));
+        assert_eq!(found.url, "https://api.example.com/v2/updated");
+        assert_eq!(found.headers.len(), 1);
+        assert!(!found.headers[0].enabled);
+        assert_eq!(found.query.len(), 1);
+        assert!(matches!(found.body, Body::Json { .. }));
+        assert!(matches!(found.auth, Auth::Bearer { .. }));
     }
 
     #[test]

@@ -19,6 +19,7 @@ export const useAppStore = defineStore('app', () => {
   const isBackendReady = ref(false)
   const appInfo = ref<AppInfo | null>(null)
   const activeEnvironmentId = ref<string | null>(null)
+  const sidebarVersion = ref(0)
 
   /** 启动时调用,确认后端可用 */
   async function checkBackend(): Promise<void> {
@@ -32,10 +33,17 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  /** 通知 sidebar 刷新(collections/history 等数据变更后调用) */
+  function bumpSidebar(): void {
+    sidebarVersion.value++
+  }
+
   return {
     isBackendReady,
     appInfo,
     activeEnvironmentId,
+    sidebarVersion,
     checkBackend,
+    bumpSidebar,
   }
 })

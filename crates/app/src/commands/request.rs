@@ -53,34 +53,67 @@
 
 use std::collections::HashMap;
 
+use api_holder_core::history::HistoryEntry;
 use api_holder_core::http::{self, Request, Response};
 
 use crate::AppState;
 
-/// 发送一个 HTTP 请求,返回响应。
+/// 发送一个 HTTP 请求,返回响应。自动写入 history 表(成功/失败都记)。
 ///
 /// ## 参数
 ///
-/// - `state`: Tauri 注入的应用状态(持有共享的 `reqwest::Client`)
+/// - `state`: Tauri 注入的应用状态(持有共享的 `reqwest::Client` + `Database`)
 /// - `req`: 完整请求(method / url / headers / query / body / auth)
-/// - `vars`: 环境变量插值表(`{{var}}` → 值),可选,没传就是空(不插值)
+/// - `vars`: 环境变量插值表(`{{var}}` → 值),可选
+/// - `request_id`: 关联的已保存请求 ID,可选(未保存的新 Tab 传 None)
 ///
 /// ## 返回
 ///
-/// 成功 → `Ok(Response)`,失败 → `Err(String)`(已经 to_string 过的错误消息)
+/// 成功 → `Ok(Response)`,失败 → `Err(String)`。两种情况都会写入 history。
 #[tauri::command]
 pub async fn execute_request(
     state: tauri::State<'_, AppState>,
     req: Request,
     vars: Option<HashMap<String, String>>,
+    request_id: Option<String>,
 ) -> Result<Response, String> {
-    // vars 是 Option,JS 不传时就是 None → 默认空 HashMap → 不做插值
     let vars = vars.unwrap_or_default();
+    let req_snapshot = req.clone();
+    let request_uuid = request_id
+        .as_deref()
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
 
-    // 实际干活在 core 库,这里只是薄壳。错误转成 string 给前端。
-    http::execute_with_vars(&state.http_client, req, &vars)
-        .await
-        .map_err(|e| e.to_string())
+    match http::execute_with_vars(&state.http_client, req, &vars).await {
+        Ok(response) => {
+            let entry = HistoryEntry {
+                id: uuid::Uuid::new_v4(),
+                request_id: request_uuid,
+                request_snapshot: req_snapshot,
+                response: Some(response.clone()),
+                error: None,
+                sent_at: chrono::Utc::now(),
+            };
+            if let Err(e) = state.db.history().record(&entry) {
+                tracing::warn!("failed to record history: {e}");
+            }
+            Ok(response)
+        }
+        Err(e) => {
+            let err_msg = e.to_string();
+            let entry = HistoryEntry {
+                id: uuid::Uuid::new_v4(),
+                request_id: request_uuid,
+                request_snapshot: req_snapshot,
+                response: None,
+                error: Some(err_msg.clone()),
+                sent_at: chrono::Utc::now(),
+            };
+            if let Err(rec_err) = state.db.history().record(&entry) {
+                tracing::warn!("failed to record history: {rec_err}");
+            }
+            Err(err_msg)
+        }
+    }
 }
 
 // ───────────────────────────────────────────────────────────────────

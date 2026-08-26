@@ -1,21 +1,27 @@
 <script setup lang="ts">
 /**
- * 环境(Environment)管理视图
+ * 环境管理弹框
  *
+ * 以 NModal 弹框形式展示,不打断主区域的请求 Tab。
  * - 显示环境列表,标记激活的
  * - 创建 / 重命名 / 删除环境
  * - 切换激活(原子操作,影响所有请求的 {{var}} 插值)
  * - 编辑环境变量(KV 对 + enabled toggle)
- * - 用 `bulk_replace_variables` 一次性保存(避免频繁单条更新)
+ * - 用 `bulk_replace_variables` 一次性保存
  */
 
-import { computed, onMounted, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { computed, ref, watch } from 'vue'
+import { useDialog, useMessage } from 'naive-ui'
 
 import { invokeT } from '@/composables/useInvoke'
+import { useAppStore } from '@/stores/app'
 import type { Environment, Variable } from '@/types/api'
 
+const show = defineModel<boolean>({ default: false })
+
 const message = useMessage()
+const dialog = useDialog()
+const appStore = useAppStore()
 
 // ─── State ──────────────────────────────────────────────
 const envs = ref<Environment[]>([])
@@ -25,6 +31,10 @@ const loading = ref(false)
 
 const showCreate = ref(false)
 const newEnvName = ref('')
+
+const showRename = ref(false)
+const renameTarget = ref<Environment | null>(null)
+const renameValue = ref('')
 
 const selectedEnvId = ref<string | null>(null)
 
@@ -40,8 +50,10 @@ const selectedVars = computed<Variable[]>({
   },
 })
 
-// ─── Lifecycle ──────────────────────────────────────────
-onMounted(load)
+// ─── 弹框打开时加载 ────────────────────────────────────
+watch(show, (v) => {
+  if (v) load()
+})
 
 // ─── Actions ────────────────────────────────────────────
 async function load() {
@@ -65,7 +77,7 @@ async function selectEnv(id: string) {
   if (!(id in varsByEnv.value)) {
     try {
       varsByEnv.value[id] = await invokeT('list_variables', {
-        environment_id: id,
+        environmentId: id,
       })
     } catch (e) {
       message.error(`加载变量失败: ${(e as Error).message}`)
@@ -86,45 +98,70 @@ async function createEnv() {
     newEnvName.value = ''
     await load()
     selectEnv(env.id)
+    appStore.bumpSidebar()
     message.success('环境已创建')
   } catch (e) {
     message.error(`创建失败: ${(e as Error).message}`)
   }
 }
 
-async function renameEnv(e: Environment) {
-  const name = window.prompt('新名称', e.name)
-  if (!name || name === e.name) return
+function renameEnv(e: Environment) {
+  renameTarget.value = e
+  renameValue.value = e.name
+  showRename.value = true
+}
+
+async function confirmRename() {
+  const target = renameTarget.value
+  if (!target) return
+  const name = renameValue.value.trim()
+  if (!name) {
+    message.warning('请输入环境名')
+    return
+  }
+  if (name === target.name) {
+    showRename.value = false
+    return
+  }
   try {
-    await invokeT('rename_environment', { id: e.id, new_name: name })
+    await invokeT('rename_environment', { id: target.id, newName: name })
+    showRename.value = false
+    renameTarget.value = null
     await load()
+    appStore.bumpSidebar()
     message.success('已重命名')
   } catch (err) {
     message.error(`重命名失败: ${(err as Error).message}`)
   }
 }
 
-async function deleteEnv(e: Environment) {
+function deleteEnv(e: Environment) {
   const n = varsByEnv.value[e.id]?.length ?? 0
-  const ok = window.confirm(
-    `确定删除环境 "${e.name}"?\n里面的 ${n} 个变量会一起删除!`,
-  )
-  if (!ok) return
-  try {
-    await invokeT('delete_environment', { id: e.id })
-    delete varsByEnv.value[e.id]
-    if (selectedEnvId.value === e.id) selectedEnvId.value = null
-    await load()
-    message.success('已删除')
-  } catch (err) {
-    message.error(`删除失败: ${(err as Error).message}`)
-  }
+  dialog.warning({
+    title: '删除环境',
+    content: `确定删除环境 "${e.name}"?里面的 ${n} 个变量会一起删除!`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await invokeT('delete_environment', { id: e.id })
+        delete varsByEnv.value[e.id]
+        if (selectedEnvId.value === e.id) selectedEnvId.value = null
+        await load()
+        appStore.bumpSidebar()
+        message.success('已删除')
+      } catch (err) {
+        message.error(`删除失败: ${(err as Error).message}`)
+      }
+    },
+  })
 }
 
 async function activate(e: Environment) {
   try {
     await invokeT('set_active_environment', { id: e.id })
-    activeEnvId.value = e.id
+    await load()
+    appStore.bumpSidebar()
     message.success(`已激活 ${e.name}`)
   } catch (err) {
     message.error(`切换失败: ${(err as Error).message}`)
@@ -153,19 +190,17 @@ function removeVar(idx: number) {
 
 async function saveVars() {
   if (!selectedEnvId.value) return
-  // 过滤掉空 key
   const valid = selectedVars.value.filter((v) => v.key.trim() !== '')
   if (valid.length !== selectedVars.value.length) {
     message.warning('已跳过空 key 的变量')
   }
   try {
-    // 给新行生成稳定 id(后端需要 id 字段)
     const normalized = valid.map((v) => ({
       ...v,
       id: v.id.startsWith('tmp-') ? crypto.randomUUID() : v.id,
     }))
     await invokeT('bulk_replace_variables', {
-      environment_id: selectedEnvId.value,
+      environmentId: selectedEnvId.value,
       variables: normalized,
     })
     varsByEnv.value[selectedEnvId.value] = normalized
@@ -177,17 +212,16 @@ async function saveVars() {
 </script>
 
 <template>
-  <div class="env-view">
-    <header class="header">
-      <h2>🌍 环境</h2>
-      <n-button type="primary" @click="showCreate = true">+ 新建环境</n-button>
-    </header>
-
+  <n-modal v-model:show="show" preset="card" title="🌍 环境管理" style="width: 820px; max-width: 90vw">
     <div v-if="loading && envs.length === 0" class="loading">加载中...</div>
 
     <div v-else class="layout">
       <!-- 左:环境列表 -->
       <div class="env-list">
+        <div class="env-list-header">
+          <span class="env-list-title">环境列表</span>
+          <n-button size="tiny" type="primary" @click="showCreate = true">+</n-button>
+        </div>
         <n-empty
           v-if="envs.length === 0"
           description="还没有环境"
@@ -265,7 +299,7 @@ async function saveVars() {
             </div>
             <div class="hint">
               💡 使用方式:URL/Headers 里写
-              <code>{{ '{{key}}' }}</code>,发请求时自动替换为 value。
+              <code v-pre>{{key}}</code>,发请求时自动替换为 value。
             </div>
           </div>
         </template>
@@ -291,43 +325,42 @@ async function saveVars() {
         </n-space>
       </template>
     </n-modal>
-  </div>
+
+    <!-- 重命名环境弹窗 -->
+    <n-modal
+      v-model:show="showRename"
+      preset="card"
+      title="重命名环境"
+      style="max-width: 400px"
+    >
+      <n-input
+        v-model:value="renameValue"
+        placeholder="新名称"
+        @keydown.enter="confirmRename"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showRename = false">取消</n-button>
+          <n-button type="primary" @click="confirmRename">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+  </n-modal>
 </template>
 
 <style scoped>
-.env-view {
-  height: 100%;
-  padding: 16px 24px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.header h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
 .loading {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: var(--n-text-color-3);
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 16px;
-  flex: 1;
-  min-height: 0;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  max-height: 60vh;
+  min-height: 300px;
 }
 
 .env-list,
@@ -341,22 +374,37 @@ async function saveVars() {
   gap: 4px;
 }
 
+.env-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid var(--n-border-color);
+  margin-bottom: 4px;
+}
+
+.env-list-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-text-color-3);
+}
+
 .env-item {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .env-item:hover {
-  background: var(--n-hover-color, rgba(0, 0, 0, 0.04));
+  background: var(--n-hover-color);
 }
 
 .env-item.active {
-  background: rgba(24, 160, 88, 0.1);
+  background: rgba(24, 160, 88, 0.12);
 }
 
 .env-info {
@@ -373,7 +421,7 @@ async function saveVars() {
 
 .active-tag {
   font-size: 10px;
-  background: #18a058;
+  background: var(--n-primary-color);
   color: white;
   padding: 1px 6px;
   border-radius: 8px;
@@ -390,7 +438,7 @@ async function saveVars() {
 .empty {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: var(--n-text-color-3);
   font-size: 13px;
 }
 
@@ -412,14 +460,14 @@ async function saveVars() {
   color: var(--n-text-color-3);
   margin-top: 8px;
   padding: 8px;
-  background: var(--n-hover-color, rgba(0, 0, 0, 0.02));
-  border-radius: 4px;
+  background: var(--n-action-color);
+  border-radius: 6px;
 }
 
 code {
-  background: var(--n-border-color);
+  background: var(--n-action-color);
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: 'Fira Code', monospace;
 }
 </style>

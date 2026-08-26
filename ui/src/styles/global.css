@@ -6,17 +6,17 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
+}
+
+body {
   font-family: 'Lato', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: #f5f5f5;
-  color: #1f1f1f;
+  /* 首屏兜底,JS 加载后由 .app 的主题变量接管 */
+  background: #f5f5f5;
 }
 
 @media (prefers-color-scheme: dark) {
-  html,
-  body,
-  #app {
-    background-color: #18181c;
-    color: #e0e0e0;
+  body {
+    background: #101014;
   }
 }
 
@@ -28,4 +28,40 @@ body,
 code,
 pre {
   font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* 窄滚动条(中性灰,深浅主题通用) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 140, 0.35);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 140, 140, 0.55);
+}
+
+/* HTTP 方法颜色(全局共享: Sidebar / RequestTabs / HistoryView) */
+.m-get    { color: #18a058; background: rgba(24, 160, 88, 0.12); }
+.m-post   { color: #2080f0; background: rgba(32, 128, 240, 0.12); }
+.m-put    { color: #f0a020; background: rgba(240, 160, 32, 0.12); }
+.m-patch  { color: #9b59b6; background: rgba(155, 89, 182, 0.12); }
+.m-delete { color: #d03050; background: rgba(208, 48, 80, 0.12); }
+.m-head,
+.m-options { color: #8a8a8a; background: rgba(140, 140, 140, 0.12); }
+
+/* 深色下用 naive dark 同款亮色,保证对比度 */
+@media (prefers-color-scheme: dark) {
+  .m-get    { color: #63e2b7; background: rgba(99, 226, 183, 0.16); }
+  .m-post   { color: #70c0e8; background: rgba(112, 192, 232, 0.16); }
+  .m-put    { color: #f2c97d; background: rgba(242, 201, 125, 0.16); }
+  .m-patch  { color: #c39bd3; background: rgba(195, 155, 211, 0.16); }
+  .m-delete { color: #e88080; background: rgba(232, 128, 128, 0.16); }
+  .m-head,
+  .m-options { color: #a0a0a0; background: rgba(160, 160, 160, 0.16); }
 }

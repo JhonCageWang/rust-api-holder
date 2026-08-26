@@ -7,12 +7,13 @@
  */
 
 import { onMounted, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 
 import { invokeT } from '@/composables/useInvoke'
 import type { Collection } from '@/types/api'
 
 const message = useMessage()
+const dialog = useDialog()
 
 // ─── State ────────────────────────────────────────────
 const collections = ref<Collection[]>([])
@@ -21,6 +22,10 @@ const loading = ref(false)
 const showCreate = ref(false)
 const newName = ref('')
 const newDescription = ref('')
+
+const showRename = ref(false)
+const renameTarget = ref<Collection | null>(null)
+const renameValue = ref('')
 
 // ─── Lifecycle ───────────────────────────────────────
 onMounted(load)
@@ -60,7 +65,7 @@ async function create() {
     await invokeT('create_collection', {
       name,
       description: newDescription.value.trim() || null,
-      parent_id: null,
+      parentId: null,
     })
     message.success('集合已创建')
     showCreate.value = false
@@ -73,11 +78,28 @@ async function create() {
   }
 }
 
-async function rename(c: Collection) {
-  const name = window.prompt('新名称', c.name)
-  if (!name || name === c.name) return
+function rename(c: Collection) {
+  renameTarget.value = c
+  renameValue.value = c.name
+  showRename.value = true
+}
+
+async function confirmRename() {
+  const target = renameTarget.value
+  if (!target) return
+  const name = renameValue.value.trim()
+  if (!name) {
+    message.warning('请输入名称')
+    return
+  }
+  if (name === target.name) {
+    showRename.value = false
+    return
+  }
   try {
-    await invokeT('rename_collection', { id: c.id, new_name: name })
+    await invokeT('rename_collection', { id: target.id, newName: name })
+    showRename.value = false
+    renameTarget.value = null
     message.success('已重命名')
     await load()
   } catch (e) {
@@ -85,20 +107,24 @@ async function rename(c: Collection) {
   }
 }
 
-async function remove(c: Collection) {
+function remove(c: Collection) {
   const n = requestCounts.value[c.id] ?? 0
-  const ok = window.confirm(
-    `确定删除集合 "${c.name}"?\n里面的 ${n} 个请求也会被删除!`,
-  )
-  if (!ok) return
-  try {
-    await invokeT('delete_collection', { id: c.id })
-    message.success('已删除')
-    delete requestCounts.value[c.id]
-    await load()
-  } catch (e) {
-    message.error(`删除失败: ${(e as Error).message}`)
-  }
+  dialog.warning({
+    title: '删除集合',
+    content: `确定删除集合 "${c.name}"?\n里面的 ${n} 个请求也会被删除!`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await invokeT('delete_collection', { id: c.id })
+        message.success('已删除')
+        delete requestCounts.value[c.id]
+        await load()
+      } catch (e) {
+        message.error(`删除失败: ${(e as Error).message}`)
+      }
+    },
+  })
 }
 </script>
 
@@ -164,6 +190,26 @@ async function remove(c: Collection) {
         <n-space justify="end">
           <n-button @click="showCreate = false">取消</n-button>
           <n-button type="primary" @click="create">创建</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 重命名集合弹窗 -->
+    <n-modal
+      v-model:show="showRename"
+      preset="card"
+      title="重命名集合"
+      style="max-width: 400px"
+    >
+      <n-input
+        v-model:value="renameValue"
+        placeholder="新名称"
+        @keydown.enter="confirmRename"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showRename = false">取消</n-button>
+          <n-button type="primary" @click="confirmRename">保存</n-button>
         </n-space>
       </template>
     </n-modal>

@@ -8,7 +8,7 @@
  * - form:    复用 KeyValueEditor 编辑 fields
  * - raw:     Content-Type 输入框 + textarea
  */
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import type { KeyValue, RequestBody } from '@/types/api'
 import KeyValueEditor from './KeyValueEditor.vue'
 
@@ -17,25 +17,55 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: RequestBody): void
 }>()
 
-// 切换 body 类型时,要构造一个新的 body(因为每种变体的字段不一样)
 type BodyType = 'none' | 'json' | 'form' | 'raw'
 
+// 缓存每种类型的内容,切换类型时不丢数据
+const bodyCache = {
+  json: '',
+  rawContent: '',
+  rawContentType: 'text/plain',
+  formFields: [] as KeyValue[],
+}
+
+// 外部加载请求时同步缓存
+watch(
+  () => props.modelValue,
+  (body) => {
+    if (body.type === 'json') bodyCache.json = body.content ?? ''
+    else if (body.type === 'raw') {
+      bodyCache.rawContent = body.content ?? ''
+      bodyCache.rawContentType = body.content_type ?? 'text/plain'
+    } else if (body.type === 'form') bodyCache.formFields = body.fields ?? []
+  },
+  { immediate: true },
+)
+
 function setType(type: BodyType): void {
+  const old = props.modelValue
+
+  // 切换前保存当前内容
+  if (old.type === 'json') bodyCache.json = old.content ?? ''
+  else if (old.type === 'raw') {
+    bodyCache.rawContent = old.content ?? ''
+    bodyCache.rawContentType = old.content_type ?? 'text/plain'
+  } else if (old.type === 'form') bodyCache.formFields = old.fields ?? []
+
+  // 从缓存恢复目标类型
   switch (type) {
     case 'none':
       emit('update:modelValue', { type: 'none' })
       return
     case 'json':
-      emit('update:modelValue', { type: 'json', content: '' })
+      emit('update:modelValue', { type: 'json', content: bodyCache.json })
       return
     case 'form':
-      emit('update:modelValue', { type: 'form', fields: [] })
+      emit('update:modelValue', { type: 'form', fields: bodyCache.formFields })
       return
     case 'raw':
       emit('update:modelValue', {
         type: 'raw',
-        content: '',
-        content_type: 'text/plain',
+        content: bodyCache.rawContent,
+        content_type: bodyCache.rawContentType,
       })
       return
   }
@@ -100,9 +130,9 @@ function setFormFields(v: KeyValue[]): void {
       <template v-if="modelValue.type === 'json'">
         <n-input
           type="textarea"
+          class="fill-area"
           :value="jsonContent"
           placeholder='{ "key": "value" }'
-          :autosize="{ minRows: 8, maxRows: 20 }"
           :input-props="{ autocomplete: 'off' }"
           @update:value="(v: string) => patch({ content: v })"
         />
@@ -129,9 +159,9 @@ function setFormFields(v: KeyValue[]): void {
         </n-space>
         <n-input
           type="textarea"
+          class="fill-area"
           :value="rawContent"
           placeholder="raw body content..."
-          :autosize="{ minRows: 6, maxRows: 20 }"
           :input-props="{ autocomplete: 'off' }"
           @update:value="(v: string) => patch({ content: v })"
         />
@@ -141,11 +171,37 @@ function setFormFields(v: KeyValue[]): void {
 </template>
 
 <style scoped>
+/* 撑满 tab-pane:radio 固定,内容区占满剩余高度 */
 .body-editor {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .body-content {
   margin-top: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* textarea 填满剩余高度(n-input 内部:root > wrapper > textarea) */
+.fill-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-area :deep(.n-input-wrapper) {
+  flex: 1;
+  min-height: 0;
+}
+
+.fill-area :deep(.n-input__textarea-el) {
+  height: 100%;
 }
 </style>
